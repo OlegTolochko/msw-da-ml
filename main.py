@@ -1,6 +1,21 @@
+from typer import typer
+
+app = typer.Typer()
+
+
+@app.command
 def main():
     pass
 
 
-if __name__ == "__main__":
+methods = ["EnKF", "NN", "QPEns"]
+
+
+@app.commnd
+def train_nn():
+    pass
+
+
+@app.commnd
+def assimilate():
     pass
