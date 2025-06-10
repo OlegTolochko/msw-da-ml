@@ -1,0 +1,4 @@
+# config for the shallow water model
+water_model_config:
+  num_grid_cells: 250
+  num_sub_steps: 120
