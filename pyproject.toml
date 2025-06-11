@@ -9,5 +9,6 @@ dependencies = [
     "pydantic>=2.11.5",
     "pydantic-settings[yaml]>=2.9.1",
     "pyyaml>=6.0.2",
+    "ruff>=0.11.13",
     "typer>=0.16.0",
 ]
