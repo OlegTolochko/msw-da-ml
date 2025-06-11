@@ -9,9 +9,11 @@ water_model_config:
   num_sub_steps: 120
 
   time_step_size: 5.0
+  grid_spacing: 500.0
 
   h_cloud: 90.005 # height threshold to trigger phi replacement/convection
   h_rain: 90.1
   phi_cloud: 899.9 # phi value to replace if h surpasses h_cloud
   gravitational_constant: 10.0
   r_gamma: 1.0 # rain influence coefficient on potential phi
+  diff_coef: 20000.0 # diffusion coefficient for the height and velocity

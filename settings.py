@@ -12,12 +12,14 @@ class WaterModelConfig(BaseModel):
     base_rain: float
 
     time_step_size: float
+    grid_spacing: float
 
     h_cloud: float
     h_rain: float
     phi_cloud: float
     gravitational_constant: float
     r_gamma: float
+    diff_coef: float
 
 
 class AppSettings(BaseModel):
