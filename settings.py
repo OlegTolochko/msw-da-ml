@@ -7,6 +7,18 @@ class WaterModelConfig(BaseModel):
     num_grid_cells: int = Field(gt=0)
     num_sub_steps: int
 
+    base_velocity: float
+    base_height: float
+    base_rain: float
+
+    time_step_size: float
+
+    h_cloud: float
+    h_rain: float
+    phi_cloud: float
+    gravitational_constant: float
+    r_gamma: float
+
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
