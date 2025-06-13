@@ -22,6 +22,7 @@ class WaterModelConfig(BaseModel):
     u_diff_coef: float
     h_diff_coef: float
     r_diff_coef: float
+    r_rate: float
 
 
 class AppSettings(BaseModel):

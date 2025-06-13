@@ -31,6 +31,7 @@ class ModifiedShallowWaterModel:
         self,
         state_past: np.ndarray,
         state_present: np.ndarray,
+        state_future: np.ndarray,
         phi: np.ndarray,
         wind_perturbation: np.ndarray,
     ):
@@ -43,6 +44,8 @@ class ModifiedShallowWaterModel:
                         Shape: (3, num_grid_cells + 2, num_ensemble_members)
             state_present: The model state at time (t),
                         Shape: (3, num_grid_cells + 2, num_ensemble_members)
+            state_future: The model state to be predicted at time (t + dt),
+                        Shape: (3, num_grid_cells + 2, num_ensemble_members)
             phi: The potential that largely controls the wind,
                         Shape: (num_grid_cells + 2, num_ensemble_members)
             wind_perturbation: Noise to be applied to the wind field,
@@ -52,6 +55,15 @@ class ModifiedShallowWaterModel:
             A numpy array containing the new model state at time (t + dt),
             Shape: (3, num_grid_cells + 2, num_ensemble_members)
         """
+
+        # Update ghost cells
+        state_past[:, 0] = state_past[:, self.config.ngrid]
+        state_present[:, 0] = state_present[:, self.config.ngrid]
+        state_future[:, 0] = state_future[:, self.config.ngrid]
+        state_past[:, self.config.ngrid + 1] = state_past[:, 1]
+        state_present[:, self.config.ngrid + 1] = state_present[:, 1]
+        state_future[:, self.config.ngrid + 1] = state_future[:, 1]
+
         u_past, r_past, h_past = state_past
         u_pr, r_pr, h_pr = state_present
 
@@ -64,20 +76,12 @@ class ModifiedShallowWaterModel:
             self.config.gravitational_constant * h_pr[1 : self.config.ngrid + 1],
         )
 
-        # Update ghost cells
+        # Update phi ghost cells
         phi[0] = phi[self.config.ngrid]
         phi[self.config.ngrid + 1] = phi[1]
 
         # add rain influence to potential phi
         phi += self.config.r_gamma * r_pr
-
-        # leap frog method derivatives
-        u_advection = -(self.config.time_step_size / (2 * self.config.grid_spacing)) * (
-            u_pr[2 : self.config.ngrid + 2] ** 2 - u_pr[0 : self.config.ngrid] ** 2
-        )
-        u_pressure_gradient_force = -(
-            2 * self.config.time_step_size / self.config.grid_spacing
-        ) * (phi[1 : self.config.ngrid + 1] - phi[0 : self.config.ngrid])
 
         def calculate_diffusion(past_state_variable, diff_coef):
             return (
@@ -90,6 +94,15 @@ class ModifiedShallowWaterModel:
                 * self.config.time_step_size
             )
 
+        # leap frog method derivatives
+        # Update velocity/wind u
+        u_advection = -(self.config.time_step_size / (2 * self.config.grid_spacing)) * (
+            u_pr[2 : self.config.ngrid + 2] ** 2 - u_pr[0 : self.config.ngrid] ** 2
+        )
+        u_pressure_gradient_force = -(
+            2 * self.config.time_step_size / self.config.grid_spacing
+        ) * (phi[1 : self.config.ngrid + 1] - phi[0 : self.config.ngrid])
+
         u_diffusion = calculate_diffusion(u_past, self.config.u_diff_coef)
         u_future = (
             u_past[1 : self.config.ngrid + 1]
@@ -98,6 +111,7 @@ class ModifiedShallowWaterModel:
             + u_diffusion
         )
 
+        # Update height/mass h
         h_mass_divergence = (self.config.time_step_size / self.config.grid_spacing) * (
             u_pr[2 : self.config.ngrid + 2]
             * (h_pr[1 : self.config.ngrid + 1] + h_pr[2 : self.config.ngrid + 2])
@@ -105,12 +119,33 @@ class ModifiedShallowWaterModel:
             * (h_pr[0 : self.config.ngrid] + h_pr[1 : self.config.ngrid + 1])
         )
         h_diffusion = calculate_diffusion(h_past, self.config.h_diff_coef)
+        h_future = h_past[1 : self.ngrid + 1] + h_mass_divergence + h_diffusion
 
-        h_future = h_mass_divergence + h_diffusion
-
+        # Update rain r
+        rain_production_mask = np.logical_and(
+            h_pr[1 : self.config.ngrid + 1] > self.config.h_rain,
+            u_pr[2 : self.config.ngrid] - u_pr[1 : self.config.ngrid + 1] < 0,
+        )
+        rain_production_rate = np.where(rain_production_mask, self.config.r_rate, 0)
+        r_removal = (
+            -self.config.r_removal_rate
+            * self.time_step_size
+            * 2
+            * r_pr[1 : self.ngrid + 1]
+        )
+        r_production = (
+            -2
+            * rain_production_rate
+            * (self.time_step_size / self.grid_spacing)
+            * u_pr[2 : self.config.ngrid + 2]
+            - u_pr[1 : self.config.ngrid + 1]
+        )
         r_diffusion = calculate_diffusion(r_past, self.config.r_diff_coef)
+        r_future = r_past[1 : self.ngrid + 1] + r_removal + r_production + r_diffusion
 
-        r_future = None
+        state_future[0, 1 : self.config.ngrid + 1] = u_future
+        state_future[1, 1 : self.config.ngrid + 1] = h_future
+        state_future[2, 1 : self.config.ngrid + 1] = r_future
 
     def apply_nsub_steps(self, state: np.ndarray):
         """Applies nsub shallow water model steps to a given state
@@ -122,7 +157,7 @@ class ModifiedShallowWaterModel:
             updated_state: Updated state after nsub steps
         """
         # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
-        past_state, present_state, predicted_state = (
+        past_state, present_state, future_state = (
             np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members)) * 3
         )
 
@@ -130,21 +165,20 @@ class ModifiedShallowWaterModel:
         (
             past_state[:, 1 : self.config.ngrid + 1],
             present_state[:, 1 : self.config.ngrid + 1],
-            predicted_state[:, 1 : self.config.ngrid + 1],
+            future_state[:, 1 : self.config.ngrid + 1],
         ) = state * 3
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        predicted_state = None
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation(step)
-            predicted_state = self.msw_step(
-                present_state, past_state, phi, wind_perturbation
+            future_state = self.msw_step(
+                present_state, past_state, future_state, phi, wind_perturbation
             )
             past_state = present_state
-            present_state = predicted_state
+            present_state = future_state
 
-        return predicted_state[:, 1 : self.config.ngrid + 1]
+        return future_state[:, 1 : self.config.ngrid + 1]
 
     def generate_wind_perturbation(step: int):
         """generate random wind perturbation"""
