@@ -16,4 +16,6 @@ water_model_config:
   phi_cloud: 899.9 # phi value to replace if h surpasses h_cloud
   gravitational_constant: 10.0
   r_gamma: 1.0 # rain influence coefficient on potential phi
-  diff_coef: 20000.0 # diffusion coefficient for the height and velocity
+  u_diff_coef: 20000.0  # diffusion coefficient for the velocity
+  h_diff_coef: 20000.0 # diffusion coefficient for the height
+  r_diff_coef: 200.0 # diffusion coefficient for the rain

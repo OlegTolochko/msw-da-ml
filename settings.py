@@ -19,7 +19,9 @@ class WaterModelConfig(BaseModel):
     phi_cloud: float
     gravitational_constant: float
     r_gamma: float
-    diff_coef: float
+    u_diff_coef: float
+    h_diff_coef: float
+    r_diff_coef: float
 
 
 class AppSettings(BaseModel):
