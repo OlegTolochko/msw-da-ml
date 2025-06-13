@@ -4,7 +4,7 @@ import yaml
 
 
 class WaterModelConfig(BaseModel):
-    num_grid_cells: int = Field(gt=0)
+    ngrid: int = Field(gt=0)
     num_sub_steps: int
 
     base_velocity: float

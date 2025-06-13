@@ -5,7 +5,7 @@ water_model_config:
   base_height: 90.0
   base_rain: 0.0
 
-  num_grid_cells: 250
+  ngrid: 250 # number grid cells
   num_sub_steps: 120
 
   time_step_size: 5.0
