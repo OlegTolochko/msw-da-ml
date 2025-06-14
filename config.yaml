@@ -21,3 +21,6 @@ water_model_config:
   r_diff_coef: 200.0 # diffusion coefficient for the rain
   r_removal_rate: 0.008
   r_rate: 50.0
+  filter_coeff: 0.1
+  filter_correction_past: 0.53
+  filter_correction_present: -0.47

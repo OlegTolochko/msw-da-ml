@@ -147,6 +147,25 @@ class ModifiedShallowWaterModel:
         state_future[1, 1 : self.config.ngrid + 1] = h_future
         state_future[2, 1 : self.config.ngrid + 1] = r_future
 
+        # rain is not allowed to be 0
+        state_future[2] = np.where(state_future[2] < 0.0, 0.0, state_future[2])
+
+        # Solution stabalization
+        second_derivative = (
+            self.config.filter_coeff
+            * 0.5
+            * (state_future - 2 * state_present + state_past)
+        )
+
+        next_state_past = (
+            state_present + self.config.filter_correction_past * second_derivative
+        )
+        next_state_present = (
+            state_future + self.config.filter_correction_present * second_derivative
+        )
+
+        return next_state_past, next_state_present
+
     def apply_nsub_steps(self, state: np.ndarray):
         """Applies nsub shallow water model steps to a given state
         Args:
@@ -172,11 +191,9 @@ class ModifiedShallowWaterModel:
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation(step)
-            future_state = self.msw_step(
+            next_state_past, next_state_present = self.msw_step(
                 present_state, past_state, future_state, phi, wind_perturbation
             )
-            past_state = present_state
-            present_state = future_state
 
         return future_state[:, 1 : self.config.ngrid + 1]
 
