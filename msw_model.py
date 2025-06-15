@@ -5,9 +5,12 @@ type ModelState = np.ndarray[3, int, int]
 
 
 class ModifiedShallowWaterModel:
-    def __init__(self, num_ensemble_members: int):
+    def __init__(
+        self, num_ensemble_members: int, random_generator: np.random.Generator
+    ):
         """Implementation of the shallow water model"""
         self.num_ensemble_members = num_ensemble_members
+        self.random_generator = random_generator
 
         settings = load_settings()
         config = settings.water_model_config
@@ -197,12 +200,23 @@ class ModifiedShallowWaterModel:
 
         return future_state[:, 1 : self.config.ngrid + 1]
 
-    def generate_wind_perturbation(step: int):
+    def generate_wind_perturbation(self, step: int):
         """generate random wind perturbation"""
+        wind_perturbation = np.zeros(2 * self.config.ngrid, self.num_ensemble_members)
+        gaussian_noise = self.generate_gaussian_noise()
+        for j in range(self.num_ensemble_members):
+            pos = self.random_generator.randint(0, self.config.ngrid - 1)
+            wind_perturbation[pos : pos + self.config.ngrid, j] = (
+                wind_perturbation[pos : pos + self.config.ngrid, j] + gaussian_noise
+            )
+
+        return wind_perturbation
+
+    def generate_gaussian_noise(self):
         pass
 
     def save_model_state(save_path="./out/"):
-        """saves model state as .npy (.npz if we ) file"""
+        """saves model state as .npy (.npz) file"""
         pass
 
     def load_model_state(load_path="./out/"):
