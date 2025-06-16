@@ -14,10 +14,13 @@ class ModifiedShallowWaterModel:
 
         settings = load_settings()
         config = settings.water_model_config
+        self.settings = settings
         self.config = config
         self.gaussian_wind_perturbation = self.generate_gaussian_noise()
 
-        self.state_history = []
+        self.current_state = None
+        self.full_state_history = []
+        self.nsub_state_history = []
 
     def initialize(self, num_init_steps: int = 8):
         """initializes the initial shallow water model"""
@@ -32,10 +35,11 @@ class ModifiedShallowWaterModel:
 
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
+            self.nsub_state_history.append(init_state)
 
         return init_state
 
-    def animate_evolution(self, save_path="out/model_evolution.mp4"):
+    def animate_evolution(self, save_path="./out/model_evolution.mp4"):
         fig, ax = plt.subplots(figsize=(10, 6))
         x_axis = np.arange(self.config.ngrid)
 
@@ -44,7 +48,8 @@ class ModifiedShallowWaterModel:
         stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
 
         all_h_values = [
-            s[1, 1 : self.config.ngrid + 1].mean(axis=1) for s in self.state_history
+            s[1, 1 : self.config.ngrid + 1].mean(axis=1)
+            for s in self.full_state_history
         ]
         h_min = np.min(all_h_values) * 0.99
         h_max = np.max(all_h_values) * 1.01
@@ -62,7 +67,7 @@ class ModifiedShallowWaterModel:
             state_data = full_state.mean(axis=2)
             u, h, r = state_data[:, 1 : self.config.ngrid + 1]
             line.set_data(x_axis, h)
-            time_text.set_text(f"Time Step: {frame}/{len(self.state_history)}")
+            time_text.set_text(f"Time Step: {frame}/{len(self.full_state_history)}")
 
             stats_str = (
                 f"Mean Velocity (u): {u.mean():.3f} m/s\n"
@@ -75,7 +80,7 @@ class ModifiedShallowWaterModel:
         anim = FuncAnimation(
             fig,
             update,
-            frames=len(self.state_history),
+            frames=len(self.full_state_history),
             blit=True,
             interval=50,
         )
@@ -246,7 +251,7 @@ class ModifiedShallowWaterModel:
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        self.state_history.append(present_state)
+        self.full_state_history.append(present_state)
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation(step)
@@ -293,10 +298,19 @@ class ModifiedShallowWaterModel:
 
         return perturbation_normalized
 
-    def save_model_state(save_path="./out/"):
+    def save_current_model_state(self, save_path="./out/"):
         """saves model state as .npy (.npz) file"""
-        pass
+        nsub_steps = len(self.nsub_state_history)
+        base_seed = self.settings.main_config.base_seed
+        model_state_name = f"msw_model_{base_seed}_{nsub_steps}.npz"
+        full_save_path = f"{save_path}{model_state_name}"
+        np.savez(
+            full_save_path,
+            current_state=self.current_state,
+            nsub_state_history=self.nsub_state_history,
+            full_state_history=self.full_state_history,
+        )
 
-    def load_model_state(load_path="./out/"):
+    def load_from_state_history(self, load_path="./out/"):
         """loades model state from .npy file"""
-        pass
+        return self()
