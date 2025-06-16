@@ -24,3 +24,6 @@ water_model_config:
   filter_coeff: 0.1
   filter_correction_past: 0.53
   filter_correction_present: -0.47
+  
+  wind_perturbation_standard_deviation: 4
+  wind_perturbation_noise_amplitude: 0.002

@@ -1,8 +1,6 @@
 import numpy as np
 from settings import load_settings
 
-type ModelState = np.ndarray[3, int, int]
-
 
 class ModifiedShallowWaterModel:
     def __init__(
@@ -15,6 +13,7 @@ class ModifiedShallowWaterModel:
         settings = load_settings()
         config = settings.water_model_config
         self.config = config
+        self.gaussian_wind_perturbation = self.generate_gaussian_noise()
 
     def initialize(self, num_init_steps: int = 8):
         """initializes the initial shallow water model"""
@@ -167,7 +166,7 @@ class ModifiedShallowWaterModel:
             state_future + self.config.filter_correction_present * second_derivative
         )
 
-        return next_state_past, next_state_present
+        return next_state_past, next_state_present, state_future
 
     def apply_nsub_steps(self, state: np.ndarray):
         """Applies nsub shallow water model steps to a given state
@@ -194,8 +193,8 @@ class ModifiedShallowWaterModel:
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation(step)
-            next_state_past, next_state_present = self.msw_step(
-                present_state, past_state, future_state, phi, wind_perturbation
+            past_state, present_state, future_state = self.msw_step(
+                past_state, present_state, future_state, phi, wind_perturbation
             )
 
         return future_state[:, 1 : self.config.ngrid + 1]
@@ -203,17 +202,33 @@ class ModifiedShallowWaterModel:
     def generate_wind_perturbation(self, step: int):
         """generate random wind perturbation"""
         wind_perturbation = np.zeros(2 * self.config.ngrid, self.num_ensemble_members)
-        gaussian_noise = self.generate_gaussian_noise()
-        for j in range(self.num_ensemble_members):
+        gaussian_noise = self.gaussian_wind_perturbation
+        for i in range(self.num_ensemble_members):
             pos = self.random_generator.randint(0, self.config.ngrid - 1)
-            wind_perturbation[pos : pos + self.config.ngrid, j] = (
-                wind_perturbation[pos : pos + self.config.ngrid, j] + gaussian_noise
+            wind_perturbation[pos : pos + self.config.ngrid, i] = (
+                wind_perturbation[pos : pos + self.config.ngrid, i] + gaussian_noise
             )
 
         return wind_perturbation
 
     def generate_gaussian_noise(self):
-        pass
+        noise_center = float((self.config.ngrid + 1) / 2)
+        x_axis = np.array(range(self.config.ngrid + 1))
+        std = float(
+            self.config.wind_perturbation_standard_deviation
+        )  # Standard deviation for gaussian, width of perturbation
+        amp = float(
+            self.config.wind_perturbation_noise_amplitude
+        )  # Amplitude of the added noise field (in m/s)
+        gaussian = (1 / (std * np.sqrt(2.0 * np.pi))) * np.exp(
+            -0.5 * ((x_axis - noise_center) / std) ** 2
+        )
+        perturbation = (
+            gaussian[1 : self.config.ngrid + 1] - gaussian[0 : self.config.ngrid]
+        )  # derivative of gaussian
+        perturbation_normalized = amp * perturbation / max(perturbation)
+
+        return perturbation_normalized
 
     def save_model_state(save_path="./out/"):
         """saves model state as .npy (.npz) file"""

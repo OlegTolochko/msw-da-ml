@@ -27,6 +27,9 @@ class WaterModelConfig(BaseModel):
     filter_correction_past: float
     filter_correction_present: float
 
+    wind_perturbation_standard_deviation: float
+    wind_perturbation_noise_amplitude: float
+
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
