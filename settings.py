@@ -32,8 +32,13 @@ class WaterModelConfig(BaseModel):
     wind_perturbation_noise_amplitude: float
 
 
+class MainConfig(BaseModel):
+    base_seed: int
+
+
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
+    main_config: MainConfig
 
 
 def load_settings(path: str = "config.yaml") -> AppSettings:

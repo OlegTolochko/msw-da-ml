@@ -5,7 +5,7 @@ from settings import load_settings
 
 app = Typer()
 settings = load_settings()
-rngs = RandomGenerators.from_seed(base_seed=42)
+rngs = RandomGenerators.from_seed(base_seed=settings.main_config.base_seed)
 
 
 @app.command()
