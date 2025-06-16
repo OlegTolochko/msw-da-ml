@@ -22,6 +22,7 @@ class WaterModelConfig(BaseModel):
     u_diff_coef: float
     h_diff_coef: float
     r_diff_coef: float
+    r_removal_rate: float
     r_rate: float
     filter_coeff: float
     filter_correction_past: float

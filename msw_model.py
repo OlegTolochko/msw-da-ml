@@ -1,5 +1,7 @@
 import numpy as np
 from settings import load_settings
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 
 class ModifiedShallowWaterModel:
@@ -15,19 +17,73 @@ class ModifiedShallowWaterModel:
         self.config = config
         self.gaussian_wind_perturbation = self.generate_gaussian_noise()
 
+        self.state_history = []
+
     def initialize(self, num_init_steps: int = 8):
         """initializes the initial shallow water model"""
-        u, h, r = np.zeros((self.ngrid, self.num_ensemble_members)) * 3
+        u = np.zeros((self.config.ngrid, self.num_ensemble_members))
+        h = np.zeros((self.config.ngrid, self.num_ensemble_members))
+        r = np.zeros((self.config.ngrid, self.num_ensemble_members))
 
         u = u + self.config.base_velocity
         h = h + self.config.base_height
         r = r + self.config.base_rain
-        init_state = np.concat(u, h, r)
+        init_state = np.array([u, h, r])
 
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
 
         return init_state
+
+    def animate_evolution(self, save_path="out/model_evolution.mp4"):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        x_axis = np.arange(self.config.ngrid)
+
+        (line,) = ax.plot([], [], lw=2, label="Water Height (h)")
+        time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
+        stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
+
+        all_h_values = [
+            s[1, 1 : self.config.ngrid + 1].mean(axis=1) for s in self.state_history
+        ]
+        h_min = np.min(all_h_values) * 0.99
+        h_max = np.max(all_h_values) * 1.01
+        ax.set_ylim(h_min, h_max)
+        ax.set_xlim(0, self.config.ngrid - 1)
+        ax.set_title("Shallow Water Model State Evolution")
+        ax.set_xlabel("Grid Cell")
+        ax.set_ylabel("Water Height (h)")
+        ax.legend()
+        ax.grid(True)
+
+        def update(frame):
+            full_state = self.state_history[frame]
+
+            state_data = full_state.mean(axis=2)
+            u, h, r = state_data[:, 1 : self.config.ngrid + 1]
+            line.set_data(x_axis, h)
+            time_text.set_text(f"Time Step: {frame}/{len(self.state_history)}")
+
+            stats_str = (
+                f"Mean Velocity (u): {u.mean():.3f} m/s\n"
+                f"Mean Rain (r):     {r.mean():.4f}"
+            )
+            stats_text.set_text(stats_str)
+
+            return line, time_text, stats_text
+
+        anim = FuncAnimation(
+            fig,
+            update,
+            frames=len(self.state_history),
+            blit=True,
+            interval=50,
+        )
+
+        if save_path:
+            anim.save(save_path, writer="ffmpeg", fps=15)
+        else:
+            plt.show()
 
     def msw_step(
         self,
@@ -66,8 +122,8 @@ class ModifiedShallowWaterModel:
         state_present[:, self.config.ngrid + 1] = state_present[:, 1]
         state_future[:, self.config.ngrid + 1] = state_future[:, 1]
 
-        u_past, r_past, h_past = state_past
-        u_pr, r_pr, h_pr = state_present
+        u_past, h_past, r_past = state_past
+        u_pr, h_pr, r_pr = state_present
 
         u_pr[1 : self.config.ngrid + 1] += wind_perturbation
 
@@ -121,29 +177,30 @@ class ModifiedShallowWaterModel:
             * (h_pr[0 : self.config.ngrid] + h_pr[1 : self.config.ngrid + 1])
         )
         h_diffusion = calculate_diffusion(h_past, self.config.h_diff_coef)
-        h_future = h_past[1 : self.ngrid + 1] + h_mass_divergence + h_diffusion
+        h_future = h_past[1 : self.config.ngrid + 1] - h_mass_divergence + h_diffusion
 
         # Update rain r
         rain_production_mask = np.logical_and(
             h_pr[1 : self.config.ngrid + 1] > self.config.h_rain,
-            u_pr[2 : self.config.ngrid] - u_pr[1 : self.config.ngrid + 1] < 0,
+            u_pr[2 : self.config.ngrid + 2] - u_pr[1 : self.config.ngrid + 1] < 0,
         )
         rain_production_rate = np.where(rain_production_mask, self.config.r_rate, 0)
         r_removal = (
             -self.config.r_removal_rate
-            * self.time_step_size
+            * self.config.time_step_size
             * 2
-            * r_pr[1 : self.ngrid + 1]
+            * r_pr[1 : self.config.ngrid + 1]
         )
         r_production = (
             -2
             * rain_production_rate
-            * (self.time_step_size / self.grid_spacing)
-            * u_pr[2 : self.config.ngrid + 2]
-            - u_pr[1 : self.config.ngrid + 1]
+            * (self.config.time_step_size / self.config.grid_spacing)
+            * (u_pr[2 : self.config.ngrid + 2] - u_pr[1 : self.config.ngrid + 1])
         )
         r_diffusion = calculate_diffusion(r_past, self.config.r_diff_coef)
-        r_future = r_past[1 : self.ngrid + 1] + r_removal + r_production + r_diffusion
+        r_future = (
+            r_past[1 : self.config.ngrid + 1] + r_removal + r_production + r_diffusion
+        )
 
         state_future[0, 1 : self.config.ngrid + 1] = u_future
         state_future[1, 1 : self.config.ngrid + 1] = h_future
@@ -178,38 +235,44 @@ class ModifiedShallowWaterModel:
             updated_state: Updated state after nsub steps
         """
         # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
-        past_state, present_state, future_state = (
-            np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members)) * 3
-        )
+        past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
+        present_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
+        future_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
 
         # prepare state for leapfrog method by introducing a past, present and future dimension
-        (
-            past_state[:, 1 : self.config.ngrid + 1],
-            present_state[:, 1 : self.config.ngrid + 1],
-            future_state[:, 1 : self.config.ngrid + 1],
-        ) = state * 3
+        past_state[:, 1 : self.config.ngrid + 1] = state
+        present_state[:, 1 : self.config.ngrid + 1] = state
+        future_state[:, 1 : self.config.ngrid + 1] = state
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
+
+        self.state_history.append(present_state)
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation(step)
             past_state, present_state, future_state = self.msw_step(
                 past_state, present_state, future_state, phi, wind_perturbation
             )
+            self.state_history.append(present_state)
 
         return future_state[:, 1 : self.config.ngrid + 1]
 
     def generate_wind_perturbation(self, step: int):
         """generate random wind perturbation"""
-        wind_perturbation = np.zeros(2 * self.config.ngrid, self.num_ensemble_members)
+        wind_perturbation = np.zeros((2 * self.config.ngrid, self.num_ensemble_members))
         gaussian_noise = self.gaussian_wind_perturbation
         for i in range(self.num_ensemble_members):
-            pos = self.random_generator.randint(0, self.config.ngrid - 1)
+            pos = self.random_generator.integers(0, self.config.ngrid - 1)
             wind_perturbation[pos : pos + self.config.ngrid, i] = (
                 wind_perturbation[pos : pos + self.config.ngrid, i] + gaussian_noise
             )
 
-        return wind_perturbation
+        return (
+            wind_perturbation[0 : self.config.ngrid]
+            + wind_perturbation[
+                self.config.ngrid : self.config.ngrid + self.config.ngrid
+            ]
+        )
 
     def generate_gaussian_noise(self):
         noise_center = float((self.config.ngrid + 1) / 2)
