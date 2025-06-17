@@ -28,6 +28,14 @@ water_model_config:
   wind_perturbation_standard_deviation: 4
   wind_perturbation_noise_amplitude: 0.002
 
+observation_generation_config:
+  u_error_std: 0.001
+  u_error_mean: 0.0
+  h_error_std: 0.01
+  h_error_mean: 0.0
+  r_error_std: 1.5
+  r_error_mean: -8.0
+
 global_config:
   out_path: ./out/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs
