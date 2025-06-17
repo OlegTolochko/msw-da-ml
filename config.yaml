@@ -28,5 +28,6 @@ water_model_config:
   wind_perturbation_standard_deviation: 4
   wind_perturbation_noise_amplitude: 0.002
 
-main_config:
+global_config:
+  out_path: ./out/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs
