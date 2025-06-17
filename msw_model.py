@@ -36,7 +36,7 @@ class ModifiedShallowWaterModel:
 
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
-            self.nsub_state_history.append(init_state)
+            self.nsub_state_history.append(init_state.copy())
 
         return init_state
 
@@ -201,18 +201,20 @@ class ModifiedShallowWaterModel:
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        self.full_state_history.append(present_state)
+        self.full_state_history.append(present_state[:, 1:self.config.ngrid+1])
 
         for step in range(self.config.num_sub_steps):
-            wind_perturbation = self.generate_wind_perturbation(step)
+            wind_perturbation = self.generate_wind_perturbation()
             past_state, present_state, future_state = self.msw_step(
                 past_state, present_state, future_state, phi, wind_perturbation
             )
-            self.full_state_history.append(present_state)
-
+            self.full_state_history.append(present_state[:, 1: self.config.ngrid+1])
+        
+        self.full_state_history.append(future_state[:, 1 : self.config.ngrid + 1])
+        self.current_state = future_state[:, 1 : self.config.ngrid + 1]
         return future_state[:, 1 : self.config.ngrid + 1]
 
-    def generate_wind_perturbation(self, step: int):
+    def generate_wind_perturbation(self):
         """generate random wind perturbation"""
         wind_perturbation = np.zeros((2 * self.config.ngrid, self.num_ensemble_members))
         gaussian_noise = self.gaussian_wind_perturbation
@@ -265,7 +267,7 @@ class ModifiedShallowWaterModel:
         stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
 
         all_h_values = [
-            s[1, 1 : self.config.ngrid + 1].mean(axis=1) for s in state_history
+            s[1].mean(axis=1) for s in state_history
         ]
         h_min = np.min(all_h_values) * 0.99
         h_max = np.max(all_h_values) * 1.01
@@ -281,7 +283,7 @@ class ModifiedShallowWaterModel:
             full_state = state_history[frame]
 
             state_data = full_state.mean(axis=2)
-            u, h, r = state_data[:, 1 : self.config.ngrid + 1]
+            u, h, r = state_data
             line.set_data(x_axis, h)
             time_text.set_text(f"Time Step: {frame}/{len(state_history)}")
 
@@ -332,7 +334,7 @@ class ModifiedShallowWaterModel:
 
     @classmethod
     def from_state_history(cls, load_path):
-        """loades model state from .npz file"""
+        """loads model state from .npz file"""
         with np.load(load_path, allow_pickle=True) as data:
             current_state = data["current_state"]
             nsub_state_history = data["nsub_state_history"]
