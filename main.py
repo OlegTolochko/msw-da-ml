@@ -40,6 +40,11 @@ def visualize_existing_model_state_history(model_name: str):
 
 
 @app.command()
+def generate_observations_from_truth():
+    pass
+
+
+@app.command()
 def train_nn():
     pass
 

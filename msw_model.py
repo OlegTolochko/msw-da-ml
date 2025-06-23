@@ -201,15 +201,15 @@ class ModifiedShallowWaterModel:
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        self.full_state_history.append(present_state[:, 1:self.config.ngrid+1])
+        self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation()
             past_state, present_state, future_state = self.msw_step(
                 past_state, present_state, future_state, phi, wind_perturbation
             )
-            self.full_state_history.append(present_state[:, 1: self.config.ngrid+1])
-        
+            self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
+
         self.full_state_history.append(future_state[:, 1 : self.config.ngrid + 1])
         self.current_state = future_state[:, 1 : self.config.ngrid + 1]
         return future_state[:, 1 : self.config.ngrid + 1]
@@ -266,9 +266,7 @@ class ModifiedShallowWaterModel:
         time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
         stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
 
-        all_h_values = [
-            s[1].mean(axis=1) for s in state_history
-        ]
+        all_h_values = [s[1].mean(axis=1) for s in state_history]
         h_min = np.min(all_h_values) * 0.99
         h_max = np.max(all_h_values) * 1.01
         ax.set_ylim(h_min, h_max)
