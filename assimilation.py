@@ -2,6 +2,7 @@ import numpy as np
 from settings import load_settings
 
 settings = load_settings()
+obs_config = settings.observation_generation_config
 
 
 def generate_observations_from_state_history(state_history, random_generator):
@@ -13,7 +14,6 @@ def generate_observation(
     num_ensemble_members: int,
     random_generator: np.random.Generator,
 ):
-    obs_config = settings.observation_generation_config
     num_grid_cells = truth_state.shape[1]
     ensemble_shape = (num_ensemble_members, num_grid_cells)
 
@@ -38,3 +38,32 @@ def generate_observation(
     observation_original = observation_ensemble[0]
 
     return observation_original, observation_ensemble
+
+
+def generate_radar_masks(
+    truth_state: np.ndarray, random_generator: np.random.Generator
+):
+    num_grid_cells = truth_state.shape[1]
+
+    u_mask = np.ones(num_grid_cells)
+    h_mask = np.ones(num_grid_cells)
+    r_mask = np.ones(num_grid_cells)
+
+    is_raining = truth_state[2, :, 0] > obs_config.radar_rain_threshold
+
+    clear_sky_observations = random_generator.choice(
+        a=[True, False],
+        size=num_grid_cells,
+        p=[
+            obs_config.radar_no_rain_observation_percentage,
+            1 - obs_config.radar_no_rain_observation_percentage,
+        ],
+    )
+
+    u_mask[is_raining] = 0
+    h_mask[is_raining] = 0
+    r_mask[is_raining] = 0
+
+    u_mask[clear_sky_observations] = 0
+
+    return np.stack([u_mask, h_mask, r_mask])

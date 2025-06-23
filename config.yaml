@@ -36,6 +36,9 @@ observation_generation_config:
   r_error_std: 1.5
   r_error_mean: -8.0
 
+  radar_rain_threshold: 0.005 # threshold for rain to observed by radar
+  radar_no_rain_observation_percentage: 0.1 # percentage of no rain locations radar observes
+
 global_config:
   out_path: ./out/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

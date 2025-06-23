@@ -40,6 +40,9 @@ class ObservationGenerationConfig:
     r_error_std: float
     r_error_mean: float
 
+    radar_rain_threshold: float
+    radar_no_rain_observation_percentage: float
+
 
 class GlobalConfig(BaseModel):
     out_path: str
