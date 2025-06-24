@@ -38,6 +38,7 @@ observation_generation_config:
 
   radar_rain_threshold: 0.005 # threshold for rain to observed by radar
   radar_no_rain_observation_percentage: 0.1 # percentage of no rain locations radar observes
+  cov_inflation: 1.0
 
 global_config:
   out_path: ./out/
