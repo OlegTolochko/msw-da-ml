@@ -32,7 +32,7 @@ class WaterModelConfig(BaseModel):
     wind_perturbation_noise_amplitude: float
 
 
-class ObservationGenerationConfig:
+class ObservationGenerationConfig(BaseModel):
     u_error_std: float
     u_error_mean: float
     h_error_std: float
