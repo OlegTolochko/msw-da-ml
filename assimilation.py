@@ -70,16 +70,51 @@ def generate_radar_masks(
 
 
 def assimilate(ensemble, observation, observation_position, assimilation_method):
+    ensemble_updated = calculate_kalman_update(
+        ensemble=ensemble,
+        observation=observation,
+        observation_position=observation_position,
+    )
+
+
+def calculate_kalman_update(ensemble, observation, observation_position):
     observation_position = np.concat(observation_position, axis=0)
-    
+
     num_ensemble_members = ensemble.shape[0]
+    num_grid_cells = ensemble.shape[1]
+
     u_var = obs_config.u_error_std**2
     h_var = obs_config.h_error_std**2
-    r_var = (np.exp(obs_config.r_error_std**2)*np.exp(2*obs_config.r_error_mean + obs_config.r_error_std**2))
+    r_var = np.exp(obs_config.r_error_std**2) * np.exp(
+        2 * obs_config.r_error_mean + obs_config.r_error_std**2
+    )
     var_flat = np.concat(u_var, h_var, r_var)
-    
-    ens_mean_difference = np.sqrt(obs_config.cov_inflation/(num_ensemble_members-1))*(ensemble - np.mean(ensemble, axis=2))
-    flat_state = np.concat(ens_mean_difference, axis=0) # flattend to compute cov. err for grid point in all domains (u, h, r) to each other grid point
+
+    ens_mean_difference = np.sqrt(
+        obs_config.cov_inflation / (num_ensemble_members - 1)
+    ) * (ensemble - np.mean(ensemble, axis=2))
+    flat_state = np.concat(
+        ens_mean_difference, axis=0
+    )  # flattend to compute cov. err for grid point in all domains (u, h, r) to each other grid point
     cov_error = np.dot(flat_state, flat_state.T)
-    
-    kalman_gain = np.dot(cov_error[:, observation_position], np.linalg.inv(cov_error[observation_position, observation_position] + np.diag(var_flat)))
+
+    kalman_gain = np.dot(
+        cov_error[:, observation_position],
+        np.linalg.inv(
+            cov_error[observation_position, observation_position] + np.diag(var_flat)
+        ),
+    )
+
+    # apply kalman update to our ensemble
+    kalman_update = observation[observation_position] - ensemble[observation_position]
+
+    ensmeble_update_flat = np.concat(ensemble, axis=0) + np.dot(
+        kalman_gain, kalman_update
+    )
+
+    u_update = ensmeble_update_flat[0:num_grid_cells]
+    h_update = ensmeble_update_flat[num_grid_cells : 2 * num_grid_cells]
+    r_update = ensmeble_update_flat[2 * num_grid_cells : 3 * num_grid_cells]
+    ensemble_update = np.stack([u_update, h_update, r_update])
+
+    return ensemble_update
