@@ -33,7 +33,9 @@ def generate_observation(
         size=ensemble_shape,
     )
 
-    error_ensemble = np.transpose(np.stack([u_error, h_error, r_error], axis=1), (1, 2, 0))
+    error_ensemble = np.transpose(
+        np.stack([u_error, h_error, r_error], axis=1), (1, 2, 0)
+    )
     observation_ensemble = truth_state + error_ensemble
 
     return observation_ensemble
@@ -77,7 +79,55 @@ def assimilate(ensemble, observation, observation_position):
     return ensemble_updated
 
 
+def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
+    """calculates the localistion matrix to limit the the influence of grid cells to only a radius of grid_point_influence in the covariance matrix"""
+    gasperi_cohn_function_left = (
+        lambda z: -0.25 * np.power(z, 5)
+        + 0.5 * np.power(z, 4)
+        + (5.0 / 8.0) * np.power(z, 3)
+        - (5.0 / 3.0) * np.power(z, 2)
+        + 1.0
+    )
+
+    gasperi_cohn_function_right = (
+        lambda z, b, l: (1.0 / 12.0) * np.power(z, 5)
+        - 0.5 * np.power(z, 4)
+        + (5.0 / 8.0) * np.power(z, 3)
+        + (5.0 / 3.0) * np.power(z, 2)
+        - 5.0 * z
+        + 4.0
+        - (2.0 / 3.0) * (b / l)
+    )
+
+    localization_matrix = np.zeros((num_grid_points, num_grid_points))
+    np.fill_diagonal(localization_matrix, 1)
+
+    for point in np.arrange(-grid_point_influence, grid_point_influence):
+        point_normalized = point / grid_point_influence
+        if point < 0:
+            gasp_point = gasperi_cohn_function_left(point_normalized)
+        if point > 0:
+            gasp_point = gasperi_cohn_function_right(
+                gasp_point, grid_point_influence, point
+            )
+
+        np.fill_diagonal(localization_matrix[:, point:], gasp_point)
+        np.fill_diagonal(
+            localization_matrix[num_grid_points - point :, :point], gasp_point
+        )
+
+    # expand to all 3 water model domains
+    expanded_localization_matrix = np.tile(localization_matrix, (3, 3))
+    return expanded_localization_matrix
+
+
 def calculate_kalman_update(ensemble, observation, observation_position):
+    """
+    calculates the EnKF update
+
+    notes:
+        matrices states are flattend for an efficient and simplified calculation of the kalman update
+    """
     observation_position_flat = np.concat(observation_position, axis=0)
 
     num_ensemble_members = ensemble.shape[0]
@@ -85,9 +135,11 @@ def calculate_kalman_update(ensemble, observation, observation_position):
 
     u_var = np.tile(obs_config.u_error_std**2, num_grid_cells)
     h_var = np.tile(obs_config.h_error_std**2, num_grid_cells)
-    r_var = np.tile(np.exp(obs_config.r_error_std**2) * np.exp(
-        2 * obs_config.r_error_mean + obs_config.r_error_std**2
-    ), num_grid_cells)
+    r_var = np.tile(
+        np.exp(obs_config.r_error_std**2)
+        * np.exp(2 * obs_config.r_error_mean + obs_config.r_error_std**2),
+        num_grid_cells,
+    )
     var_flat = np.concat([u_var, h_var, r_var])[observation_position_flat]
 
     ens_mean_difference = np.sqrt(
@@ -101,11 +153,12 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     kalman_gain = np.dot(
         cov_error[:, observation_position_flat],
         np.linalg.inv(
-            cov_error[observation_position_flat, observation_position_flat] + np.diag(var_flat)
+            cov_error[observation_position_flat, observation_position_flat]
+            + np.diag(var_flat)
         ),
     )
 
-    # apply kalman update to our ensemble    
+    # apply kalman update to our ensemble
     kalman_update = observation[observation_position] - ensemble[observation_position]
 
     ensmeble_update_flat = np.concat(ensemble, axis=0) + np.dot(

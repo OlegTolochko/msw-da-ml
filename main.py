@@ -5,6 +5,7 @@ from typer import Typer
 from random_manager import RandomGenerators
 from msw_model import ModifiedShallowWaterModel
 from settings import load_settings
+from assimilation import assimilate, generate_observation, generate_radar_masks
 
 app = Typer()
 settings = load_settings()
@@ -18,7 +19,7 @@ def main():
 
 
 @app.command()
-def initialize_msw_model(ensemble_members: int = 10):
+def initialize_msw_model(ensemble_members: int = 10, save=True):
     """initializes the shallow water models"""
     state_truth = ModifiedShallowWaterModel(
         num_ensemble_members=1, random_generator=rngs.truth_rng
@@ -28,8 +29,11 @@ def initialize_msw_model(ensemble_members: int = 10):
     )
     state_truth.initialize()
     state_ensemble.initialize()
-    state_truth.save_current_model_state()
-    state_ensemble.save_current_model_state()
+    if save:
+        state_truth.save_current_model_state()
+        state_ensemble.save_current_model_state()
+
+    return state_truth, state_ensemble
 
 
 @app.command()
@@ -50,9 +54,29 @@ def train_nn():
 
 
 @app.command()
-def assimilate():
-    pass
+def assimilation(num_ensemble_members: int):
+    model_truth, model_ensemble = initialize_msw_model(
+        ensemble_members=num_ensemble_members, save=False
+    )
+
+    state_truth = model_truth.get_current_state()
+    state_ensemble = model_ensemble.get_current_state()
+
+    observation_ensemble = generate_observation(
+        truth_state=state_truth,
+        num_ensemble_members=num_ensemble_members,
+        random_generator=rngs.obs_rng,
+    )
+    observation_locations = generate_radar_masks(
+        state_truth=state_truth, random_generator=rngs.radar_rng
+    )
+
+    state_assimilated = assimilate(
+        ensemble=state_ensemble,
+        observation=observation_ensemble,
+        observation_position=observation_locations,
+    )
 
 
 if __name__ == "__main__":
-    app()
+    assimilation(10)
