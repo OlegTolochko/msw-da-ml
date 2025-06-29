@@ -70,13 +70,23 @@ def generate_radar_masks(
     return np.stack([u_mask, h_mask, r_mask]) == 0
 
 
-def assimilate(ensemble, observation, observation_position):
+def kf_assimilate(ensemble, observation, observation_position):
     ensemble_updated = calculate_kalman_update(
         ensemble=ensemble,
         observation=observation,
         observation_position=observation_position,
     )
     return ensemble_updated
+
+
+def qpens_assimilate(ensemble, observation, observation_position):
+    observation_position_flat = np.concat(observation_position, axis=0)
+
+    num_ensemble_members = ensemble.shape[0]
+    num_grid_points = ensemble.shape[1]
+    
+    cov_error = calculate_covariance_error(ensemble=ensemble, num_ensemble_members=num_ensemble_members, num_grid_points=num_grid_points)
+    la, da, v = np.linalg.svd(cov_error, full_matrices=True)
 
 
 def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
@@ -142,14 +152,7 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     )
     var_flat = np.concat([u_var, h_var, r_var])[observation_position_flat]
 
-    ens_mean_difference = np.sqrt(
-        obs_config.cov_inflation / (num_ensemble_members - 1)
-    ) * (ensemble - np.mean(ensemble, axis=2, keepdims=True))
-    flat_state = np.concat(
-        ens_mean_difference, axis=0
-    )  # flattend to compute cov. err for grid point in all domains (u, h, r) to each other grid point
-    cov_error = np.dot(flat_state, flat_state.T)
-    cov_error = cov_error*calculate_localization_matrix(num_grid_points=num_grid_points, grid_point_influence=obs_config.grid_point_influence)
+    cov_error = calculate_covariance_error(ensemble=ensemble, num_ensemble_members=num_ensemble_members, num_grid_points=num_grid_points)
 
     kalman_gain = np.dot(
         cov_error[:, observation_position_flat],
@@ -172,3 +175,15 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     ensemble_update = np.stack([u_update, h_update, r_update])
 
     return ensemble_update
+
+
+def calculate_covariance_error(ensemble, num_ensemble_members, num_grid_points):
+    ens_mean_difference = np.sqrt(
+    obs_config.cov_inflation / (num_ensemble_members - 1)
+    ) * (ensemble - np.mean(ensemble, axis=2, keepdims=True))
+    flat_state = np.concat(
+        ens_mean_difference, axis=0
+    )  # flattend to compute cov. err for grid point in all domains (u, h, r) to each other grid point
+    cov_error = np.dot(flat_state, flat_state.T)
+    cov_error = cov_error*calculate_localization_matrix(num_grid_points=num_grid_points, grid_point_influence=obs_config.grid_point_influence)
+    return cov_error
