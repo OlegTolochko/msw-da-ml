@@ -43,6 +43,7 @@ class ObservationGenerationConfig(BaseModel):
     radar_rain_threshold: float
     radar_no_rain_observation_percentage: float
     cov_inflation: float
+    grid_point_influence: int
 
 
 class GlobalConfig(BaseModel):

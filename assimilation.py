@@ -14,8 +14,8 @@ def generate_observation(
     num_ensemble_members: int,
     random_generator: np.random.Generator,
 ):
-    num_grid_cells = truth_state.shape[1]
-    ensemble_shape = (num_ensemble_members, num_grid_cells)
+    num_grid_points = truth_state.shape[1]
+    ensemble_shape = (num_ensemble_members, num_grid_points)
 
     u_error = random_generator.normal(
         loc=obs_config.u_error_mean,
@@ -44,17 +44,17 @@ def generate_observation(
 def generate_radar_masks(
     state_truth: np.ndarray, random_generator: np.random.Generator
 ):
-    num_grid_cells = state_truth.shape[1]
+    num_grid_points = state_truth.shape[1]
 
-    u_mask = np.ones(num_grid_cells)
-    h_mask = np.ones(num_grid_cells)
-    r_mask = np.ones(num_grid_cells)
+    u_mask = np.ones(num_grid_points)
+    h_mask = np.ones(num_grid_points)
+    r_mask = np.ones(num_grid_points)
 
     is_raining = state_truth[2, :, 0] > obs_config.radar_rain_threshold
 
     clear_sky_observations = random_generator.choice(
         a=[True, False],
-        size=num_grid_cells,
+        size=num_grid_points,
         p=[
             obs_config.radar_no_rain_observation_percentage,
             1 - obs_config.radar_no_rain_observation_percentage,
@@ -102,7 +102,7 @@ def calculate_localization_matrix(num_grid_points: int, grid_point_influence: in
     localization_matrix = np.zeros((num_grid_points, num_grid_points))
     np.fill_diagonal(localization_matrix, 1)
 
-    for point in np.arrange(-grid_point_influence, grid_point_influence):
+    for point in np.arange(-grid_point_influence, grid_point_influence):
         point_normalized = point / grid_point_influence
         if point < 0:
             gasp_point = gasperi_cohn_function_left(point_normalized)
@@ -131,14 +131,14 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     observation_position_flat = np.concat(observation_position, axis=0)
 
     num_ensemble_members = ensemble.shape[0]
-    num_grid_cells = ensemble.shape[1]
+    num_grid_points = ensemble.shape[1]
 
-    u_var = np.tile(obs_config.u_error_std**2, num_grid_cells)
-    h_var = np.tile(obs_config.h_error_std**2, num_grid_cells)
+    u_var = np.tile(obs_config.u_error_std**2, num_grid_points)
+    h_var = np.tile(obs_config.h_error_std**2, num_grid_points)
     r_var = np.tile(
         np.exp(obs_config.r_error_std**2)
         * np.exp(2 * obs_config.r_error_mean + obs_config.r_error_std**2),
-        num_grid_cells,
+        num_grid_points,
     )
     var_flat = np.concat([u_var, h_var, r_var])[observation_position_flat]
 
@@ -149,6 +149,7 @@ def calculate_kalman_update(ensemble, observation, observation_position):
         ens_mean_difference, axis=0
     )  # flattend to compute cov. err for grid point in all domains (u, h, r) to each other grid point
     cov_error = np.dot(flat_state, flat_state.T)
+    cov_error = cov_error*calculate_localization_matrix(num_grid_points=num_grid_points, grid_point_influence=obs_config.grid_point_influence)
 
     kalman_gain = np.dot(
         cov_error[:, observation_position_flat],
@@ -165,9 +166,9 @@ def calculate_kalman_update(ensemble, observation, observation_position):
         kalman_gain, kalman_update
     )
 
-    u_update = ensmeble_update_flat[0:num_grid_cells]
-    h_update = ensmeble_update_flat[num_grid_cells : 2 * num_grid_cells]
-    r_update = ensmeble_update_flat[2 * num_grid_cells : 3 * num_grid_cells]
+    u_update = ensmeble_update_flat[0:num_grid_points]
+    h_update = ensmeble_update_flat[num_grid_points : 2 * num_grid_points]
+    r_update = ensmeble_update_flat[2 * num_grid_points : 3 * num_grid_points]
     ensemble_update = np.stack([u_update, h_update, r_update])
 
     return ensemble_update
