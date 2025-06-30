@@ -1,12 +1,9 @@
 import numpy as np
 from settings import load_settings
+import cvxopt
 
 settings = load_settings()
 obs_config = settings.observation_generation_config
-
-
-def generate_observations_from_state_history(state_history, random_generator):
-    pass
 
 
 def generate_observation(
@@ -85,6 +82,15 @@ def qpens_assimilate(ensemble, observation, observation_position):
     num_ensemble_members = ensemble.shape[0]
     num_grid_points = ensemble.shape[1]
 
+    var_flat = calculate_obs_covariance_error(
+        num_ensemble_members=num_ensemble_members,
+        observation_position_flat=observation_position_flat,
+    )
+
+    ens_obs_difference = (
+        observation[observation_position] - ensemble[observation_position]
+    )
+
     cov_error = calculate_background_covariance_error(
         ensemble=ensemble,
         num_ensemble_members=num_ensemble_members,
@@ -96,23 +102,36 @@ def qpens_assimilate(ensemble, observation, observation_position):
     cov_error_sqrt = np.dot(eigen_vectors, np.sqrt(singular_values))
     cov_error_sqrt_obs = cov_error_sqrt[observation_position]
 
-    hessian = np.identity(num_grid_points, 3) + np.dot(
-        cov_error_sqrt_obs.T,
-        np.divide(cov_error_sqrt_obs, observation_position_flat[:, None]),
+    weighed_uncertainty = np.divide(
+        cov_error_sqrt_obs, observation_position_flat[:, None]
     )
 
-    rain_constraint = np.arange()
-    height_constraint = np.arange()
+    hessian = np.identity(num_grid_points, 3) + np.dot(
+        cov_error_sqrt_obs.T, weighed_uncertainty
+    )
 
-    mass_cons_constraint = np.dot(
-        np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_constraint,])
+    rain_mask = np.arange(num_grid_points * 2, num_grid_points * 3)
+    height_mask = np.arange(num_grid_points, num_grid_points * 2)
+
+    mass_conservation_constraint = np.dot(
+        np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_mask])
     )
     qpens_solution = np.zeros((num_grid_points * 3, num_ensemble_members))
     for ens_idx in range(num_ensemble_members):
-        continue
+        observation_update_direction = np.dot(
+            -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
+        )
+        qpens_solution = cvxopt.solvers.qp(
+            cvxopt.matrix(hessian),
+            cvxopt.matrix(observation_update_direction),
+            cvxopt.matrix(-eigen_vectors[rain_mask]),
+            cvxopt.matrix(ensemble[rain_mask, ens_idx]),
+            cvxopt.matrix(mass_conservation_constraint),
+            cvxopt.matrix(np.zeros((1, 1))),
+        )
 
-    ensemble += np.dot(eigen_vectors, qpens_solution)
-    return ensemble
+    ensemble_updated += np.dot(eigen_vectors, qpens_solution)
+    return ensemble_updated
 
 
 def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
@@ -188,18 +207,20 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     )
 
     # apply kalman update to our ensemble
-    kalman_update = observation[observation_position] - ensemble[observation_position]
+    ens_obs_difference = (
+        observation[observation_position] - ensemble[observation_position]
+    )
 
     ensmeble_update_flat = np.concat(ensemble, axis=0) + np.dot(
-        kalman_gain, kalman_update
+        kalman_gain, ens_obs_difference
     )
 
     u_update = ensmeble_update_flat[0:num_grid_points]
     h_update = ensmeble_update_flat[num_grid_points : 2 * num_grid_points]
     r_update = ensmeble_update_flat[2 * num_grid_points : 3 * num_grid_points]
-    ensemble_update = np.stack([u_update, h_update, r_update])
+    ensemble_updated = np.stack([u_update, h_update, r_update])
 
-    return ensemble_update
+    return ensemble_updated
 
 
 def calculate_obs_covariance_error(num_grid_points, observation_position_flat):
