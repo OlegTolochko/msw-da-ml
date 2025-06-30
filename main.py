@@ -5,7 +5,12 @@ from typer import Typer
 from random_manager import RandomGenerators
 from msw_model import ModifiedShallowWaterModel
 from settings import load_settings
-from assimilation import kf_assimilate, generate_observation, generate_radar_masks
+from assimilation import (
+    kf_assimilate,
+    qpens_assimilate,
+    generate_observation,
+    generate_radar_masks,
+)
 
 app = Typer()
 settings = load_settings()
@@ -71,7 +76,13 @@ def assimilation(num_ensemble_members: int):
         state_truth=state_truth, random_generator=rngs.radar_rng
     )
 
-    state_assimilated = kf_assimilate(
+    state_assimilated_qp = qpens_assimilate(
+        ensemble=state_ensemble,
+        observation=observation_ensemble,
+        observation_position=observation_locations,
+    )
+
+    state_assimilated_kf = kf_assimilate(
         ensemble=state_ensemble,
         observation=observation_ensemble,
         observation_position=observation_locations,

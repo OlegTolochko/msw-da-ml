@@ -79,11 +79,11 @@ def kf_assimilate(ensemble, observation, observation_position):
 def qpens_assimilate(ensemble, observation, observation_position):
     observation_position_flat = np.concat(observation_position, axis=0)
 
-    num_ensemble_members = ensemble.shape[0]
+    num_ensemble_members = ensemble.shape[2]
     num_grid_points = ensemble.shape[1]
 
     var_flat = calculate_obs_covariance_error(
-        num_ensemble_members=num_ensemble_members,
+        num_grid_points=num_grid_points,
         observation_position_flat=observation_position_flat,
     )
 
@@ -99,14 +99,12 @@ def qpens_assimilate(ensemble, observation, observation_position):
     eigen_vectors, singular_values, eigen_vectors_transposed = np.linalg.svd(
         cov_error, full_matrices=True
     )
-    cov_error_sqrt = np.dot(eigen_vectors, np.sqrt(singular_values))
-    cov_error_sqrt_obs = cov_error_sqrt[observation_position]
+    cov_error_sqrt = np.dot(eigen_vectors, np.diag(np.sqrt(singular_values)))
+    cov_error_sqrt_obs = cov_error_sqrt[observation_position_flat]
 
-    weighed_uncertainty = np.divide(
-        cov_error_sqrt_obs, observation_position_flat[:, None]
-    )
+    weighed_uncertainty = np.divide(cov_error_sqrt_obs, var_flat[:, None])
 
-    hessian = np.identity(num_grid_points, 3) + np.dot(
+    hessian = np.identity(num_grid_points * 3) + np.dot(
         cov_error_sqrt_obs.T, weighed_uncertainty
     )
 
@@ -121,16 +119,23 @@ def qpens_assimilate(ensemble, observation, observation_position):
         observation_update_direction = np.dot(
             -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
         )
-        qpens_solution = cvxopt.solvers.qp(
+        ens_solution = cvxopt.solvers.qp(
             cvxopt.matrix(hessian),
             cvxopt.matrix(observation_update_direction),
             cvxopt.matrix(-eigen_vectors[rain_mask]),
-            cvxopt.matrix(ensemble[rain_mask, ens_idx]),
+            cvxopt.matrix(ensemble[1, :, ens_idx]),
             cvxopt.matrix(mass_conservation_constraint),
             cvxopt.matrix(np.zeros((1, 1))),
         )
+        qpens_solution[:, ens_idx] = np.asarray(ens_solution["x"]).reshape(-1)
 
-    ensemble_updated += np.dot(eigen_vectors, qpens_solution)
+    ensemble_update_flat = np.dot(eigen_vectors, qpens_solution)
+    u_update = ensemble_update_flat[0:num_grid_points]
+    h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
+    r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
+    ensemble_update = np.stack([u_update, h_update, r_update])
+
+    ensemble_updated = ensemble + ensemble_update
     return ensemble_updated
 
 
@@ -189,7 +194,7 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     num_grid_points = ensemble.shape[1]
 
     var_flat = calculate_obs_covariance_error(
-        num_ensemble_members=num_ensemble_members,
+        num_grid_points=num_grid_points,
         observation_position_flat=observation_position_flat,
     )
     cov_error = calculate_background_covariance_error(
@@ -211,13 +216,13 @@ def calculate_kalman_update(ensemble, observation, observation_position):
         observation[observation_position] - ensemble[observation_position]
     )
 
-    ensmeble_update_flat = np.concat(ensemble, axis=0) + np.dot(
+    ensemble_update_flat = np.concat(ensemble, axis=0) + np.dot(
         kalman_gain, ens_obs_difference
     )
 
-    u_update = ensmeble_update_flat[0:num_grid_points]
-    h_update = ensmeble_update_flat[num_grid_points : 2 * num_grid_points]
-    r_update = ensmeble_update_flat[2 * num_grid_points : 3 * num_grid_points]
+    u_update = ensemble_update_flat[0:num_grid_points]
+    h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
+    r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
     ensemble_updated = np.stack([u_update, h_update, r_update])
 
     return ensemble_updated
