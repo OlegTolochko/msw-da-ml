@@ -24,24 +24,6 @@ def main():
 
 
 @app.command()
-def initialize_msw_model(ensemble_members: int = 10, save=True):
-    """initializes the shallow water models"""
-    state_truth = ModifiedShallowWaterModel(
-        num_ensemble_members=1, random_generator=rngs.truth_rng
-    )
-    state_ensemble = ModifiedShallowWaterModel(
-        num_ensemble_members=ensemble_members, random_generator=rngs.ensemble_rng
-    )
-    state_truth.initialize()
-    state_ensemble.initialize()
-    if save:
-        state_truth.save_current_model_state()
-        state_ensemble.save_current_model_state()
-
-    return state_truth, state_ensemble
-
-
-@app.command()
 def visualize_existing_model_state_history(model_name: str):
     load_path = f"{settings.global_config.out_path}/{model_name}"
     state = ModifiedShallowWaterModel.from_state_history(load_path=load_path)
@@ -58,36 +40,5 @@ def train_nn():
     pass
 
 
-@app.command()
-def assimilation(num_ensemble_members: int):
-    model_truth, model_ensemble = initialize_msw_model(
-        ensemble_members=num_ensemble_members, save=False
-    )
-
-    state_truth = model_truth.get_current_state()
-    state_ensemble = model_ensemble.get_current_state()
-
-    observation_ensemble = generate_observation(
-        truth_state=state_truth,
-        num_ensemble_members=num_ensemble_members,
-        random_generator=rngs.obs_rng,
-    )
-    observation_locations = generate_radar_masks(
-        state_truth=state_truth, random_generator=rngs.radar_rng
-    )
-
-    state_assimilated_qp = qpens_assimilate(
-        ensemble=state_ensemble,
-        observation=observation_ensemble,
-        observation_position=observation_locations,
-    )
-
-    state_assimilated_kf = kf_assimilate(
-        ensemble=state_ensemble,
-        observation=observation_ensemble,
-        observation_position=observation_locations,
-    )
-
-
 if __name__ == "__main__":
-    assimilation(10)
+    app()
