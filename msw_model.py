@@ -180,7 +180,6 @@ class ModifiedShallowWaterModel:
 
         return next_state_past, next_state_present, state_future
 
-    @classmethod
     def apply_nsub_steps(self, state: np.ndarray = None):
         """Applies nsub shallow water model steps to a given state
         Args:
@@ -190,10 +189,8 @@ class ModifiedShallowWaterModel:
         Returns:
             updated_state: Updated state after nsub steps
         """
-        if state == None:
+        if state is None:
             state = self.current_state
-        else:
-            self.update_current_state(state)
 
         # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
         past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
@@ -208,6 +205,7 @@ class ModifiedShallowWaterModel:
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
         self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
+        self.current_state = present_state[:, 1 : self.config.ngrid + 1]
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation()
@@ -319,7 +317,10 @@ class ModifiedShallowWaterModel:
         return self.nsub_state_history
 
     def update_current_state(self, new_state):
-        if self.current_state.shape != new_state.shape:
+        if (
+            self.current_state is not None
+            and self.current_state.shape != new_state.shape
+        ):
             raise Exception(
                 f"Trying to update model with state shapes of {self.current_state.shape}, with a state of shape {new_state.shape}"
             )
