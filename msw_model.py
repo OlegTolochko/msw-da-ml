@@ -180,7 +180,8 @@ class ModifiedShallowWaterModel:
 
         return next_state_past, next_state_present, state_future
 
-    def apply_nsub_steps(self, state: np.ndarray):
+    @classmethod
+    def apply_nsub_steps(self, state: np.ndarray = None):
         """Applies nsub shallow water model steps to a given state
         Args:
             state: the previous water shallow model state,
@@ -189,6 +190,11 @@ class ModifiedShallowWaterModel:
         Returns:
             updated_state: Updated state after nsub steps
         """
+        if state == None:
+            state = self.current_state
+        else:
+            self.update_current_state(state)
+
         # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
         past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
         present_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
@@ -311,6 +317,14 @@ class ModifiedShallowWaterModel:
 
     def get_nsub_state_history(self):
         return self.nsub_state_history
+
+    def update_current_state(self, new_state):
+        if self.current_state.shape != new_state.shape:
+            raise Exception(
+                f"Trying to update model with state shapes of {self.current_state.shape}, with a state of shape {new_state.shape}"
+            )
+        self.current_state = new_state
+        self.full_state_history.append(new_state)
 
     def save_current_model_state(self, save_directory="./out/"):
         """saves model state as .npy (.npz) file"""
