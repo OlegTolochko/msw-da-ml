@@ -254,15 +254,7 @@ class ModifiedShallowWaterModel:
 
         return perturbation_normalized
 
-    def animate_evolution(
-        self, include_substep_history=True, save_path="./out/model_evolution.mp4"
-    ):
-        state_history = None
-        if include_substep_history:
-            state_history = self.full_state_history
-        else:
-            state_history = self.nsub_state_history
-
+    def animate_evolution_from_history(self, state_history, save_path="./out/model_evolution.mp4"):
         fig, ax = plt.subplots(figsize=(10, 6))
         x_axis = np.arange(self.config.ngrid)
 
@@ -306,6 +298,17 @@ class ModifiedShallowWaterModel:
         )
 
         anim.save(save_path, writer="ffmpeg", fps=15)
+
+    def animate_evolution(
+        self, include_substep_history=True, save_path="./out/model_evolution.mp4"
+    ):
+        state_history = None
+        if include_substep_history:
+            state_history = self.full_state_history
+        else:
+            state_history = self.nsub_state_history
+        
+        self.animate_evolution_from_history(state_history=state_history, save_path=save_path)
 
     def get_current_state(self):
         return self.current_state
