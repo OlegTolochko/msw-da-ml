@@ -119,11 +119,12 @@ def qpens_assimilate(ensemble, observation, observation_position):
         observation_update_direction = np.dot(
             -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
         )
+        cvxopt.solvers.options["show_progress"] = False
         ens_solution = cvxopt.solvers.qp(
             cvxopt.matrix(hessian),
             cvxopt.matrix(observation_update_direction),
             cvxopt.matrix(-eigen_vectors[rain_mask]),
-            cvxopt.matrix(ensemble[1, :, ens_idx]),
+            cvxopt.matrix(ensemble[2, :, ens_idx]),
             cvxopt.matrix(mass_conservation_constraint),
             cvxopt.matrix(np.zeros((1, 1))),
         )
@@ -139,45 +140,52 @@ def qpens_assimilate(ensemble, observation, observation_position):
     return ensemble_updated
 
 
-def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
-    """calculates the localistion matrix to limit the the influence of grid cells to only a radius of grid_point_influence in the covariance matrix"""
-    gasperi_cohn_function_left = (
-        lambda z: -0.25 * np.power(z, 5)
-        + 0.5 * np.power(z, 4)
-        + (5.0 / 8.0) * np.power(z, 3)
-        - (5.0 / 3.0) * np.power(z, 2)
+def calculate_gaspari_cohn(z: np.ndarray):
+    """
+    Calculates the Gaspari-Cohn function for normalized distances z.
+    """
+    rho = np.zeros_like(z, dtype=float)
+
+    mask1 = (z >= 0) & (z < 1)
+    rho[mask1] = (
+        -0.25 * z[mask1] ** 5
+        + 0.5 * z[mask1] ** 4
+        + (5.0 / 8.0) * z[mask1] ** 3
+        - (5.0 / 3.0) * z[mask1] ** 2
         + 1.0
     )
 
-    gasperi_cohn_function_right = (
-        lambda z, b, l: (1.0 / 12.0) * np.power(z, 5)
-        - 0.5 * np.power(z, 4)
-        + (5.0 / 8.0) * np.power(z, 3)
-        + (5.0 / 3.0) * np.power(z, 2)
-        - 5.0 * z
+    mask2 = (z >= 1) & (z < 2)
+    rho[mask2] = (
+        (1.0 / 12.0) * z[mask2] ** 5
+        - 0.5 * z[mask2] ** 4
+        + (5.0 / 8.0) * z[mask2] ** 3
+        + (5.0 / 3.0) * z[mask2] ** 2
+        - 5.0 * z[mask2]
         + 4.0
-        - (2.0 / 3.0) * (b / l)
+        - (2.0 / 3.0) * (1.0 / z[mask2])
     )
 
-    localization_matrix = np.zeros((num_grid_points, num_grid_points))
-    np.fill_diagonal(localization_matrix, 1)
+    return rho
 
-    for point in np.arange(-grid_point_influence, grid_point_influence):
-        point_normalized = point / grid_point_influence
-        if point < 0:
-            gasp_point = gasperi_cohn_function_left(point_normalized)
-        if point > 0:
-            gasp_point = gasperi_cohn_function_right(
-                gasp_point, grid_point_influence, point
-            )
 
-        np.fill_diagonal(localization_matrix[:, point:], gasp_point)
-        np.fill_diagonal(
-            localization_matrix[num_grid_points - point :, :point], gasp_point
-        )
+def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
+    """
+    Calculates the localization matrix.
+    """
+    if grid_point_influence == 0:
+        return np.identity(num_grid_points * 3)
 
-    # expand to all 3 water model domains
+    indices = np.arange(num_grid_points)
+    distances = np.abs(indices - indices[:, np.newaxis])
+    periodic_distances = np.minimum(distances, num_grid_points - distances)
+
+    z = periodic_distances / float(grid_point_influence)
+
+    localization_matrix = calculate_gaspari_cohn(z)
+
     expanded_localization_matrix = np.tile(localization_matrix, (3, 3))
+
     return expanded_localization_matrix
 
 
@@ -190,7 +198,7 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     """
     observation_position_flat = np.concat(observation_position, axis=0)
 
-    num_ensemble_members = ensemble.shape[0]
+    num_ensemble_members = ensemble.shape[2]
     num_grid_points = ensemble.shape[1]
 
     var_flat = calculate_obs_covariance_error(
@@ -206,7 +214,7 @@ def calculate_kalman_update(ensemble, observation, observation_position):
     kalman_gain = np.dot(
         cov_error[:, observation_position_flat],
         np.linalg.inv(
-            cov_error[observation_position_flat, observation_position_flat]
+            cov_error[np.ix_(observation_position_flat, observation_position_flat)]
             + np.diag(var_flat)
         ),
     )
@@ -252,6 +260,6 @@ def calculate_background_covariance_error(
     cov_error = np.dot(flat_state, flat_state.T)
     cov_error = cov_error * calculate_localization_matrix(
         num_grid_points=num_grid_points,
-        grid_point_influence=obs_config.grid_point_influence,
+        grid_point_influence=2,
     )
     return cov_error
