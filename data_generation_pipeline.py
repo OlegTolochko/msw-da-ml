@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Dict, Any
 import copy
+import pickle
+from pathlib import Path
 
 import tqdm
 
@@ -11,6 +13,11 @@ from assimilation import (
     kf_assimilate,
     qpens_assimilate,
 )
+from settings import load_settings
+
+settings = load_settings()
+global_config = settings.global_config
+state_path = f"{global_config.out_path}{global_config.model_out_filename}/"
 
 @dataclass
 class PipelineState:
@@ -58,6 +65,33 @@ class DataGenerationPipeline:
         if generate_evolution_animations:
             self._generate_animations(state)
 
+        if save_data:
+            self._save_pipeline_state(state, )
+
+        return state
+    
+    def _save_pipeline_state(self, state: PipelineState, model_name: str):
+        save_path = f"{state_path}{model_name}"
+
+        if model_name.endswith(".pkl"):
+            save_path += ".pkl"
+            
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(save_path, 'wb') as f:
+            pickle.dump(state, f)
+        print(f"Pipeline state saved to: {save_path}")
+    
+    @staticmethod
+    def load_pipeline_state(model_name: str):
+        load_path = f"{state_path}{model_name}"
+
+        if model_name.endswith(".pkl"):
+            load_path_path += ".pkl"
+
+        with open(load_path, 'rb') as f:
+            state = pickle.load(f)
+        print(f"Pipeline state loaded from: {load_path}")
         return state
 
     def _forecast_truth(self, state: PipelineState):
