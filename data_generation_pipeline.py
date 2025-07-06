@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Dict, Any
 import copy
 
+import tqdm
+
 from msw_model import ModifiedShallowWaterModel
 from assimilation import (
     generate_observation,
@@ -47,7 +49,7 @@ class DataGenerationPipeline:
             histories={"kf": [], "qp": []},
         )
 
-        for i in range(num_steps):
+        for i in tqdm.tqdm(range(num_steps), desc="Pipeline Progress"):
             state.iteration = i
             state = self._forecast_truth(state)
             state = self._generate_observations(state)
