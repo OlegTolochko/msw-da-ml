@@ -39,7 +39,8 @@ def initialize_msw_model(ensemble_members: int = 10, save=True):
 
 @app.command()
 def generate_training_data(
-    num_ensemble_members=10, num_generation_steps=10, nn_warmup_steps=None
+    num_ensemble_members: int = 10,
+    num_generation_steps: int = 20,
 ):
     """Three step process:
     1. forecast
@@ -49,8 +50,8 @@ def generate_training_data(
     model_truth, model_ensemble = initialize_msw_model(
         ensemble_members=num_ensemble_members, save=False
     )
-    model_ensemble_kf = copy.copy(model_ensemble)
-    model_ensemble_qp = copy.copy(model_ensemble)
+    model_ensemble_kf = copy.deepcopy(model_ensemble)
+    model_ensemble_qp = copy.deepcopy(model_ensemble)
 
     qp_state_history = []
     kf_state_history = []
@@ -87,6 +88,14 @@ def generate_training_data(
         model_ensemble_kf.apply_nsub_steps(state_assimilated_kf)
         model_ensemble_qp.apply_nsub_steps(state_assimilated_qp)
 
+    model_ensemble_kf.animate_evolution_from_history(
+        kf_state_history, "./out/model_evolution_kf.mp4"
+    )
+    model_ensemble_qp.animate_evolution_from_history(
+        qp_state_history, "./out/model_evolution_qp.mp4"
+    )
+    model_truth.animate_evolution(False)
+
 
 if __name__ == "__main__":
-    generate_training_data()
+    app()
