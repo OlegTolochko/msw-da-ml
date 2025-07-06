@@ -6,7 +6,7 @@ from pathlib import Path
 
 import tqdm
 
-from msw_model import ModifiedShallowWaterModel
+from msw_model import ModifiedShallowWaterModel, animate_evolution_from_history
 from assimilation import (
     generate_observation,
     generate_radar_masks,
@@ -18,6 +18,7 @@ from settings import load_settings
 settings = load_settings()
 global_config = settings.global_config
 state_path = f"{global_config.out_path}{global_config.model_out_filename}/"
+
 
 @dataclass
 class PipelineState:
@@ -66,22 +67,24 @@ class DataGenerationPipeline:
             self._generate_animations(state)
 
         if save_data:
-            self._save_pipeline_state(state, )
+            self._save_pipeline_state(
+                state,
+            )
 
         return state
-    
+
     def _save_pipeline_state(self, state: PipelineState, model_name: str):
         save_path = f"{state_path}{model_name}"
 
         if model_name.endswith(".pkl"):
             save_path += ".pkl"
-            
+
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(save_path, 'wb') as f:
+
+        with open(save_path, "wb") as f:
             pickle.dump(state, f)
         print(f"Pipeline state saved to: {save_path}")
-    
+
     @staticmethod
     def load_pipeline_state(model_name: str):
         load_path = f"{state_path}{model_name}"
@@ -89,7 +92,7 @@ class DataGenerationPipeline:
         if model_name.endswith(".pkl"):
             load_path_path += ".pkl"
 
-        with open(load_path, 'rb') as f:
+        with open(load_path, "rb") as f:
             state = pickle.load(f)
         print(f"Pipeline state loaded from: {load_path}")
         return state
@@ -139,10 +142,11 @@ class DataGenerationPipeline:
 
     def _generate_animations(self, state: PipelineState):
         """Generate output animations"""
-        state.models["ensemble_kf"].animate_evolution_from_history(
+        animate_evolution_from_history(
             state.histories["kf"], "./out/model_evolution_kf.mp4"
         )
-        state.models["ensemble_qp"].animate_evolution_from_history(
+        animate_evolution_from_history(
             state.histories["qp"], "./out/model_evolution_qp.mp4"
         )
-        state.models["truth"].animate_evolution(False)
+        state_history_truth = state.models["truth"].get_nsub_state_history()
+        animate_evolution_from_history(state_history_truth)

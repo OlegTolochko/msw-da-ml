@@ -12,12 +12,15 @@ settings = load_settings()
 rngs = RandomGenerators.from_seed(base_seed=settings.global_config.base_seed)
 os.makedirs(settings.global_config.out_path, exist_ok=True)
 
+
 @app.command()
 def generate_training_data(
     num_ensemble_members: int = 10,
     num_steps: int = 20,
 ):
-    pipeline = DataGenerationPipeline(num_ensemble_members=num_ensemble_members, rngs=rngs)
+    pipeline = DataGenerationPipeline(
+        num_ensemble_members=num_ensemble_members, rngs=rngs
+    )
     result = pipeline.run(num_steps=num_steps)
 
 
