@@ -123,14 +123,14 @@ def qpens_assimilate(ensemble, observation, observation_position):
         ens_solution = cvxopt.solvers.qp(
             cvxopt.matrix(hessian),
             cvxopt.matrix(observation_update_direction),
-            cvxopt.matrix(-eigen_vectors[rain_mask]),
+            cvxopt.matrix(-cov_error_sqrt[rain_mask]),
             cvxopt.matrix(ensemble[2, :, ens_idx]),
             cvxopt.matrix(mass_conservation_constraint),
             cvxopt.matrix(np.zeros((1, 1))),
         )
         qpens_solution[:, ens_idx] = np.asarray(ens_solution["x"]).reshape(-1)
 
-    ensemble_update_flat = np.dot(eigen_vectors, qpens_solution)
+    ensemble_update_flat = np.dot(cov_error_sqrt, qpens_solution)
     u_update = ensemble_update_flat[0:num_grid_points]
     h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
     r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
