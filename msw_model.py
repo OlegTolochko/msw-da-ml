@@ -36,7 +36,6 @@ class ModifiedShallowWaterModel:
 
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
-            self.nsub_state_history.append(init_state.copy())
 
         return init_state
 
@@ -180,7 +179,7 @@ class ModifiedShallowWaterModel:
 
         return next_state_past, next_state_present, state_future
 
-    def apply_nsub_steps(self, state: np.ndarray):
+    def apply_nsub_steps(self, state: np.ndarray = None):
         """Applies nsub shallow water model steps to a given state
         Args:
             state: the previous water shallow model state,
@@ -189,6 +188,9 @@ class ModifiedShallowWaterModel:
         Returns:
             updated_state: Updated state after nsub steps
         """
+        if state is None:
+            state = self.current_state
+
         # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
         past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
         present_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
@@ -201,16 +203,19 @@ class ModifiedShallowWaterModel:
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        self.full_state_history.append(present_state[:, 1:self.config.ngrid+1])
+        self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
+        self.current_state = present_state[:, 1 : self.config.ngrid + 1]
 
         for step in range(self.config.num_sub_steps):
             wind_perturbation = self.generate_wind_perturbation()
             past_state, present_state, future_state = self.msw_step(
                 past_state, present_state, future_state, phi, wind_perturbation
             )
-            self.full_state_history.append(present_state[:, 1: self.config.ngrid+1])
-        
-        self.full_state_history.append(future_state[:, 1 : self.config.ngrid + 1])
+            self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
+
+        self.nsub_state_history.append(
+            future_state[:, 1 : self.config.ngrid + 1].copy()
+        )
         self.current_state = future_state[:, 1 : self.config.ngrid + 1]
         return future_state[:, 1 : self.config.ngrid + 1]
 
@@ -250,15 +255,9 @@ class ModifiedShallowWaterModel:
 
         return perturbation_normalized
 
-    def animate_evolution(
-        self, include_substep_history=True, save_path="./out/model_evolution.mp4"
+    def animate_evolution_from_history(
+        self, state_history, save_path="./out/model_evolution.mp4"
     ):
-        state_history = None
-        if include_substep_history:
-            state_history = self.full_state_history
-        else:
-            state_history = self.nsub_state_history
-
         fig, ax = plt.subplots(figsize=(10, 6))
         x_axis = np.arange(self.config.ngrid)
 
@@ -266,9 +265,7 @@ class ModifiedShallowWaterModel:
         time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
         stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
 
-        all_h_values = [
-            s[1].mean(axis=1) for s in state_history
-        ]
+        all_h_values = [s[1].mean(axis=1) for s in state_history]
         h_min = np.min(all_h_values) * 0.99
         h_max = np.max(all_h_values) * 1.01
         ax.set_ylim(h_min, h_max)
@@ -303,7 +300,20 @@ class ModifiedShallowWaterModel:
             interval=50,
         )
 
-        anim.save(save_path, writer="ffmpeg", fps=15)
+        anim.save(save_path, writer="ffmpeg", fps=5)
+
+    def animate_evolution(
+        self, include_substep_history=True, save_path="./out/model_evolution.mp4"
+    ):
+        state_history = None
+        if include_substep_history:
+            state_history = self.full_state_history
+        else:
+            state_history = self.nsub_state_history
+
+        self.animate_evolution_from_history(
+            state_history=state_history, save_path=save_path
+        )
 
     def get_current_state(self):
         return self.current_state
@@ -313,6 +323,17 @@ class ModifiedShallowWaterModel:
 
     def get_nsub_state_history(self):
         return self.nsub_state_history
+
+    def update_current_state(self, new_state):
+        if (
+            self.current_state is not None
+            and self.current_state.shape != new_state.shape
+        ):
+            raise Exception(
+                f"Trying to update model with state shapes of {self.current_state.shape}, with a state of shape {new_state.shape}"
+            )
+        self.current_state = new_state
+        self.full_state_history.append(new_state)
 
     def save_current_model_state(self, save_directory="./out/"):
         """saves model state as .npy (.npz) file"""

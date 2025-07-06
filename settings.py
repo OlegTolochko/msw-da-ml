@@ -32,6 +32,20 @@ class WaterModelConfig(BaseModel):
     wind_perturbation_noise_amplitude: float
 
 
+class ObservationGenerationConfig(BaseModel):
+    u_error_std: float
+    u_error_mean: float
+    h_error_std: float
+    h_error_mean: float
+    r_error_std: float
+    r_error_mean: float
+
+    radar_rain_threshold: float
+    radar_no_rain_observation_percentage: float
+    cov_inflation: float
+    grid_point_influence: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     base_seed: int
@@ -39,6 +53,7 @@ class GlobalConfig(BaseModel):
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
+    observation_generation_config: ObservationGenerationConfig
     global_config: GlobalConfig
 
 
