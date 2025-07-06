@@ -11,6 +11,9 @@ def generate_observation(
     num_ensemble_members: int,
     random_generator: np.random.Generator,
 ):
+    """
+    Generates an ensemble of observations from a passed state.
+    """
     num_grid_points = truth_state.shape[1]
     ensemble_shape = (num_ensemble_members, num_grid_points)
 
@@ -41,6 +44,11 @@ def generate_observation(
 def generate_radar_masks(
     state_truth: np.ndarray, random_generator: np.random.Generator
 ):
+    """
+    Calculates an random mask for where observations are actually observed.
+    It's idea is to mimic radar behavior. It observes all 3 variables in rainy areas
+    and else only wind with a chance set in the config.
+    """
     num_grid_points = state_truth.shape[1]
 
     u_mask = np.ones(num_grid_points)
@@ -67,16 +75,10 @@ def generate_radar_masks(
     return np.stack([u_mask, h_mask, r_mask]) == 0
 
 
-def kf_assimilate(ensemble, observation, observation_position):
-    ensemble_updated = calculate_kalman_update(
-        ensemble=ensemble,
-        observation=observation,
-        observation_position=observation_position,
-    )
-    return ensemble_updated
-
-
 def qpens_assimilate(ensemble, observation, observation_position):
+    """
+    Calculates an ensemble update, while enforcing physical constraints.
+    """
     observation_position_flat = np.concat(observation_position, axis=0)
 
     num_ensemble_members = ensemble.shape[2]
@@ -143,6 +145,7 @@ def qpens_assimilate(ensemble, observation, observation_position):
 def calculate_gaspari_cohn(z: np.ndarray):
     """
     Calculates the Gaspari-Cohn function for normalized distances z.
+    Effectively ensures that neighbors that are further away are weighted less.
     """
     rho = np.zeros_like(z, dtype=float)
 
@@ -172,6 +175,7 @@ def calculate_gaspari_cohn(z: np.ndarray):
 def calculate_localization_matrix(num_grid_points: int, grid_point_influence: int):
     """
     Calculates the localization matrix.
+    Limits neighboring grid cell influence with a max influence distance of grid_point_influence.
     """
     if grid_point_influence == 0:
         return np.identity(num_grid_points * 3)
@@ -189,9 +193,10 @@ def calculate_localization_matrix(num_grid_points: int, grid_point_influence: in
     return expanded_localization_matrix
 
 
-def calculate_kalman_update(ensemble, observation, observation_position):
+def kf_assimilate(ensemble, observation, observation_position):
     """
-    calculates the EnKF update
+    Updates an ensemble state utilizing the Kalman Filter with an observation and its position,
+    not guaranteeing physical consistency.
 
     notes:
         matrices states are flattend for an efficient and simplified calculation of the kalman update
@@ -249,7 +254,7 @@ def calculate_obs_covariance_error(num_grid_points, observation_position_flat):
 
 
 def calculate_background_covariance_error(
-    ensemble, num_ensemble_members, num_grid_points
+    ensemble: np.ndarray, num_ensemble_members: int, num_grid_points: int
 ):
     ens_mean_difference = np.sqrt(
         obs_config.cov_inflation / (num_ensemble_members - 1)
