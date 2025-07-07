@@ -320,7 +320,7 @@ class ModifiedShallowWaterModel:
 def animate_evolution_from_history(
     state_history, save_path="./out/model_evolution.mp4"
 ):
-    ngrid = state_history.shape[1]
+    ngrid = state_history[0].shape[1]
     fig, ax = plt.subplots(figsize=(10, 6))
     x_axis = np.arange(ngrid)
 
