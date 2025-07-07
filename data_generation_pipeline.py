@@ -89,11 +89,11 @@ class DataGenerationPipeline:
         print(f"Pipeline state saved to: {save_path}")
 
     @staticmethod
-    def load_pipeline_state(pipeline_state_name: str):
+    def load_pipeline_state(pipeline_state_name: str) -> DataGenerationState:
         load_path = f"{state_path}{pipeline_state_name}"
 
         if not pipeline_state_name.endswith(".pkl"):
-            load_path_path += ".pkl"
+            load_path += ".pkl"
 
         with open(load_path, "rb") as f:
             state = pickle.load(f)
