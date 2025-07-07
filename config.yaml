@@ -43,4 +43,6 @@ observation_generation_config:
 
 global_config:
   out_path: ./out/
+  animation_out_filename: animation/
+  model_out_filename: models/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

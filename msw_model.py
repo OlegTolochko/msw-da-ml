@@ -23,7 +23,7 @@ class ModifiedShallowWaterModel:
         self.full_state_history = []
         self.nsub_state_history = []
 
-    def initialize(self, num_init_steps: int = 8):
+    def initialize(self, num_init_steps: int = 8, exclude_from_state_history: bool = True):
         """initializes the initial shallow water model"""
         u = np.zeros((self.config.ngrid, self.num_ensemble_members))
         h = np.zeros((self.config.ngrid, self.num_ensemble_members))
@@ -37,6 +37,10 @@ class ModifiedShallowWaterModel:
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
 
+        if exclude_from_state_history:
+            self.nsub_state_history = [self.nsub_state_history[-1]]
+            self.full_state_history = [self.nsub_state_history[-1]]
+        
         return init_state
 
     def msw_step(
@@ -255,66 +259,6 @@ class ModifiedShallowWaterModel:
 
         return perturbation_normalized
 
-    def animate_evolution_from_history(
-        self, state_history, save_path="./out/model_evolution.mp4"
-    ):
-        fig, ax = plt.subplots(figsize=(10, 6))
-        x_axis = np.arange(self.config.ngrid)
-
-        (line,) = ax.plot([], [], lw=2, label="Water Height (h)")
-        time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
-        stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
-
-        all_h_values = [s[1].mean(axis=1) for s in state_history]
-        h_min = np.min(all_h_values) * 0.99
-        h_max = np.max(all_h_values) * 1.01
-        ax.set_ylim(h_min, h_max)
-        ax.set_xlim(0, self.config.ngrid - 1)
-        ax.set_title("Shallow Water Model State Evolution")
-        ax.set_xlabel("Grid Cell")
-        ax.set_ylabel("Water Height (h)")
-        ax.legend()
-        ax.grid(True)
-
-        def update(frame):
-            full_state = state_history[frame]
-
-            state_data = full_state.mean(axis=2)
-            u, h, r = state_data
-            line.set_data(x_axis, h)
-            time_text.set_text(f"Time Step: {frame}/{len(state_history)}")
-
-            stats_str = (
-                f"Mean Velocity (u): {u.mean():.3f} m/s\n"
-                f"Mean Rain (r):     {r.mean():.4f}"
-            )
-            stats_text.set_text(stats_str)
-
-            return line, time_text, stats_text
-
-        anim = FuncAnimation(
-            fig,
-            update,
-            frames=len(state_history),
-            blit=True,
-            interval=50,
-        )
-
-        anim.save(save_path, writer="ffmpeg", fps=5)
-
-    def animate_evolution(
-        self, include_substep_history=True, save_path="./out/model_evolution.mp4"
-    ):
-        state_history = None
-        if include_substep_history:
-            state_history = self.full_state_history
-        else:
-            state_history = self.nsub_state_history
-
-        self.animate_evolution_from_history(
-            state_history=state_history, save_path=save_path
-        )
-
     def get_current_state(self):
         return self.current_state
 
@@ -375,3 +319,51 @@ class ModifiedShallowWaterModel:
         model.full_state_history = full_state_history
 
         return model
+
+
+def animate_evolution_from_history(
+    state_history, save_path="./out/model_evolution.mp4"
+):
+    ngrid = state_history[0].shape[1]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x_axis = np.arange(ngrid)
+
+    (line,) = ax.plot([], [], lw=2, label="Water Height (h)")
+    time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
+    stats_text = ax.text(0.02, 0.05, "", transform=ax.transAxes, fontsize=12)
+
+    all_h_values = [s[1].mean(axis=1) for s in state_history]
+    h_min = np.min(all_h_values) * 0.99
+    h_max = np.max(all_h_values) * 1.01
+    ax.set_ylim(h_min, h_max)
+    ax.set_xlim(0, ngrid - 1)
+    ax.set_title("Shallow Water Model State Evolution")
+    ax.set_xlabel("Grid Cell")
+    ax.set_ylabel("Water Height (h)")
+    ax.legend()
+    ax.grid(True)
+
+    def update(frame):
+        full_state = state_history[frame]
+
+        state_data = full_state.mean(axis=2)
+        u, h, r = state_data
+        line.set_data(x_axis, h)
+        time_text.set_text(f"Time Step: {frame}/{len(state_history)}")
+
+        stats_str = (
+            f"Mean Velocity (u): {u.mean():.3f} m/s\nMean Rain (r):     {r.mean():.4f}"
+        )
+        stats_text.set_text(stats_str)
+
+        return line, time_text, stats_text
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=len(state_history),
+        blit=True,
+        interval=50,
+    )
+
+    anim.save(save_path, writer="ffmpeg", fps=5)

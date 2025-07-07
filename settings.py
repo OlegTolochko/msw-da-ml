@@ -48,6 +48,8 @@ class ObservationGenerationConfig(BaseModel):
 
 class GlobalConfig(BaseModel):
     out_path: str
+    animation_out_filename: str
+    model_out_filename: str
     base_seed: int
 
 
