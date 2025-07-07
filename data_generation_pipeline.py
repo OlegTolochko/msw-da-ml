@@ -21,7 +21,7 @@ state_path = f"{global_config.out_path}{global_config.model_out_filename}/"
 
 
 @dataclass
-class PipelineState:
+class DataGenerationState:
     models: Dict[str, Any]
     histories: Dict[str, list]
     iteration: int = 0
@@ -37,6 +37,7 @@ class DataGenerationPipeline:
         num_steps: int,
         generate_evolution_animations: bool = True,
         save_data: bool = True,
+        pipeline_state_save_name: str = "pipeline_state",
     ):
         model_truth = ModifiedShallowWaterModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
@@ -48,7 +49,7 @@ class DataGenerationPipeline:
         model_truth.initialize()
         model_ensemble.initialize()
 
-        state = PipelineState(
+        state = DataGenerationState(
             models={
                 "truth": model_truth,
                 "ensemble_kf": copy.deepcopy(model_ensemble),
@@ -68,15 +69,17 @@ class DataGenerationPipeline:
 
         if save_data:
             self._save_pipeline_state(
-                state,
+                state, pipeline_state_name=pipeline_state_save_name
             )
 
         return state
 
-    def _save_pipeline_state(self, state: PipelineState, model_name: str):
-        save_path = f"{state_path}{model_name}"
+    def _save_pipeline_state(
+        self, state: DataGenerationState, pipeline_state_name: str
+    ):
+        save_path = f"{state_path}{pipeline_state_name}"
 
-        if model_name.endswith(".pkl"):
+        if not pipeline_state_name.endswith(".pkl"):
             save_path += ".pkl"
 
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
@@ -86,10 +89,10 @@ class DataGenerationPipeline:
         print(f"Pipeline state saved to: {save_path}")
 
     @staticmethod
-    def load_pipeline_state(model_name: str):
-        load_path = f"{state_path}{model_name}"
+    def load_pipeline_state(pipeline_state_name: str):
+        load_path = f"{state_path}{pipeline_state_name}"
 
-        if model_name.endswith(".pkl"):
+        if not pipeline_state_name.endswith(".pkl"):
             load_path_path += ".pkl"
 
         with open(load_path, "rb") as f:
@@ -97,13 +100,13 @@ class DataGenerationPipeline:
         print(f"Pipeline state loaded from: {load_path}")
         return state
 
-    def _forecast_truth(self, state: PipelineState):
+    def _forecast_truth(self, state: DataGenerationState):
         """Step 1: Truth model step"""
         if state.iteration > 0:
             state.models["truth"].apply_nsub_steps()
         return state
 
-    def _generate_observations(self, state: PipelineState):
+    def _generate_observations(self, state: DataGenerationState):
         """Step 2: Observation generation from truth"""
         truth_state = state.models["truth"].get_current_state()
 
@@ -117,7 +120,7 @@ class DataGenerationPipeline:
         )
         return state
 
-    def _assimilate_and_forecast(self, state: PipelineState):
+    def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
         ensemble_state = state.models["ensemble_kf"].get_current_state()
 
@@ -140,7 +143,7 @@ class DataGenerationPipeline:
 
         return state
 
-    def _generate_animations(self, state: PipelineState):
+    def _generate_animations(self, state: DataGenerationState):
         """Generate output animations"""
         animate_evolution_from_history(
             state.histories["kf"], "./out/model_evolution_kf.mp4"
