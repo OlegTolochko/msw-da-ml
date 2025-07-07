@@ -23,7 +23,7 @@ class ModifiedShallowWaterModel:
         self.full_state_history = []
         self.nsub_state_history = []
 
-    def initialize(self, num_init_steps: int = 8):
+    def initialize(self, num_init_steps: int = 8, exclude_from_state_history: bool = True):
         """initializes the initial shallow water model"""
         u = np.zeros((self.config.ngrid, self.num_ensemble_members))
         h = np.zeros((self.config.ngrid, self.num_ensemble_members))
@@ -37,6 +37,10 @@ class ModifiedShallowWaterModel:
         for step in range(num_init_steps):
             init_state = self.apply_nsub_steps(state=init_state)
 
+        if exclude_from_state_history:
+            self.nsub_state_history = [self.nsub_state_history[-1]]
+            self.full_state_history = [self.nsub_state_history[-1]]
+        
         return init_state
 
     def msw_step(
