@@ -45,8 +45,8 @@ def generate_radar_masks(
     state_truth: np.ndarray, random_generator: np.random.Generator
 ):
     """
-    Calculates an random mask for where observations are actually observed.
-    It's idea is to mimic radar behavior. It observes all 3 variables in rainy areas
+    Calculates a random mask for where observations are actually observed.
+    Its idea is to mimic radar behavior. It observes all 3 variables in rainy areas
     and else only wind with a chance set in the config.
     """
     num_grid_points = state_truth.shape[1]
