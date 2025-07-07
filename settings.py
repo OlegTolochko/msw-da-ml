@@ -53,10 +53,16 @@ class GlobalConfig(BaseModel):
     base_seed: int
 
 
+class NeuralNetworkConfig(BaseModel):
+    val_split_size: float
+    random_state_train_test_split: int
+
+
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
     observation_generation_config: ObservationGenerationConfig
     global_config: GlobalConfig
+    nn_config: NeuralNetworkConfig
 
 
 def load_settings(path: str = "config.yaml") -> AppSettings:
