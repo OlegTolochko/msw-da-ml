@@ -44,6 +44,7 @@ observation_generation_config:
 training_config:
   val_split_size: 0.2
   random_state_train_test_split: 42
+  batch_size: 32
 
 network_config:
   in_channels: 4
