@@ -55,7 +55,7 @@ class DataGenerationPipeline:
                 "ensemble_kf": copy.deepcopy(model_ensemble),
                 "ensemble_qp": copy.deepcopy(model_ensemble),
             },
-            histories={"kf": [], "qp": []},
+            histories={"kf": [], "qp": [], "observation_locations": []},
         )
 
         for i in tqdm.tqdm(range(num_steps), desc="Pipeline Progress"):
@@ -115,22 +115,25 @@ class DataGenerationPipeline:
             num_ensemble_members=self.num_ensemble_members,
             random_generator=self.rngs.obs_rng,
         )
-        state.observation_locations = generate_radar_masks(
+        observation_locations = generate_radar_masks(
             state_truth=truth_state, random_generator=self.rngs.radar_rng
         )
+        state.observation_locations = observation_locations
+        state.histories["observation_locations"].append(observation_locations)
         return state
 
     def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
-        ensemble_state = state.models["ensemble_kf"].get_current_state()
+        ensemble_state_kf = state.models["ensemble_kf"].get_current_state()
+        ensemble_state_qp = state.models["ensemble_qp"].get_current_state()
 
         kf_assimilated = kf_assimilate(
-            ensemble=ensemble_state,
+            ensemble=ensemble_state_kf,
             observation=state.observations,
             observation_position=state.observation_locations,
         )
         qp_assimilated = qpens_assimilate(
-            ensemble=ensemble_state,
+            ensemble=ensemble_state_qp,
             observation=state.observations,
             observation_position=state.observation_locations,
         )
