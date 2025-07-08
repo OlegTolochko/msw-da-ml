@@ -41,9 +41,15 @@ observation_generation_config:
   cov_inflation: 1.0
   grid_point_influence: 4 # number surrounding grid points to be influenced from outgoing grid point
 
-nn_config:
+training_config:
   val_split_size: 0.2
   random_state_train_test_split: 42
+
+network_config:
+  in_channels: 4
+  hidden_channels: 32
+  num_layers: 5
+  kernel_size: 3
 
 global_config:
   out_path: ./out/

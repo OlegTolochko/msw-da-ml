@@ -46,6 +46,18 @@ class ObservationGenerationConfig(BaseModel):
     grid_point_influence: int
 
 
+class TrainingConfig(BaseModel):
+    val_split_size: float
+    random_state_train_test_split: int
+
+
+class NetworkConfig(BaseModel):
+    in_channels: int
+    hidden_channels: int
+    num_layers: int
+    kernel_size: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
@@ -53,16 +65,12 @@ class GlobalConfig(BaseModel):
     base_seed: int
 
 
-class NeuralNetworkConfig(BaseModel):
-    val_split_size: float
-    random_state_train_test_split: int
-
-
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
     observation_generation_config: ObservationGenerationConfig
     global_config: GlobalConfig
-    nn_config: NeuralNetworkConfig
+    training_config: TrainingConfig
+    network_config: NetworkConfig
 
 
 def load_settings(path: str = "config.yaml") -> AppSettings:
