@@ -1,4 +1,4 @@
-import torch.functional as F
+import torch.nn.functional as F
 import torch.nn as nn
 
 from settings import load_settings
