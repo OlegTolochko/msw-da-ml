@@ -59,6 +59,11 @@ class NetworkConfig(BaseModel):
     kernel_size: int
 
 
+class LossConfig(BaseModel):
+    variable_to_punish_idx: int
+    bias_loss_weight: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
@@ -69,9 +74,10 @@ class GlobalConfig(BaseModel):
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
     observation_generation_config: ObservationGenerationConfig
-    global_config: GlobalConfig
     training_config: TrainingConfig
     network_config: NetworkConfig
+    loss_config: LossConfig
+    global_config: GlobalConfig
 
 
 def load_settings(path: str = "config.yaml") -> AppSettings:

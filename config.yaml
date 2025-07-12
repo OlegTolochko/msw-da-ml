@@ -52,6 +52,10 @@ network_config:
   num_layers: 5
   kernel_size: 3
 
+loss_config:
+  variable_to_punish_idx: 1 # Variable for bias loss, Default: 1; Options: 0: velocity, 1: height, 2: rain
+  bias_loss_weight: 1 # Weighting for bias loss
+
 global_config:
   out_path: ./out/
   animation_out_filename: animation/
