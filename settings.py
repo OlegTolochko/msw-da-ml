@@ -50,6 +50,7 @@ class TrainingConfig(BaseModel):
     val_split_size: float
     random_state_train_test_split: int
     batch_size: int
+    learning_rate: float
 
 
 class NetworkConfig(BaseModel):

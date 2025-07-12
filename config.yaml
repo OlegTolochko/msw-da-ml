@@ -45,6 +45,8 @@ training_config:
   val_split_size: 0.2
   random_state_train_test_split: 42
   batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
 
 network_config:
   in_channels: 4
