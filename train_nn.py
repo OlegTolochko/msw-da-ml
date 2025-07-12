@@ -25,6 +25,10 @@ def load_generated_data(pipeline_state_name: str):
 
 @app.command()
 def get_train_val_loaders(pipeline_state_name: str):
+    """
+    Returns train_loader and val_loader with Tensors of shape:
+        (batch_size, num_tracked_variables, num_grid_cells)
+    """
     data = DataGenerationPipeline.load_pipeline_state(
         pipeline_state_name=pipeline_state_name
     )
@@ -50,15 +54,18 @@ def get_train_val_loaders(pipeline_state_name: str):
         random_state=training_config.random_state_train_test_split,
     )
 
-    train_dataset = TensorDataset(
-        torch.tensor(kf_train, dtype=torch.float32).permute(0, 3, 1, 2),
-        torch.tensor(qp_train, dtype=torch.float32).permute(0, 3, 1, 2),
-    )
+    kf_train_tensor = torch.tensor(kf_train, dtype=torch.float32).permute(0, 3, 1, 2)
+    qp_train_tensor = torch.tensor(qp_train, dtype=torch.float32).permute(0, 3, 1, 2)
+    kf_val_tensor = torch.tensor(kf_val, dtype=torch.float32).permute(0, 3, 1, 2)
+    qp_val_tensor = torch.tensor(qp_val, dtype=torch.float32).permute(0, 3, 1, 2)
 
-    val_dataset = TensorDataset(
-        torch.tensor(kf_val, dtype=torch.float32).permute(0, 3, 1, 2),
-        torch.tensor(qp_val, dtype=torch.float32).permute(0, 3, 1, 2),
-    )
+    kf_train_flat = kf_train_tensor.flatten(0, 1)
+    qp_train_flat = qp_train_tensor.flatten(0, 1)
+    kf_val_flat = kf_val_tensor.flatten(0, 1)
+    qp_val_flat = qp_val_tensor.flatten(0, 1)
+
+    train_dataset = TensorDataset(kf_train_flat, qp_train_flat)
+    val_dataset = TensorDataset(kf_val_flat, qp_val_flat)
 
     train_loader = DataLoader(
         train_dataset, batch_size=training_config.batch_size, shuffle=True
@@ -77,6 +84,7 @@ def get_train_val_loaders(pipeline_state_name: str):
 
 @app.command()
 def train_nn():
+    train_lodar, val_loader = get_train_val_loaders()
     pass
 
 
