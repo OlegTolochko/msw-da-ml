@@ -3,10 +3,13 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from data_generation_pipeline import DataGenerationPipeline, DataGenerationState
 from typer import Typer
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 from settings import load_settings
+from network import CNNModel
+from losses import RMSEBiasLoss
 
-from torch.utils.data import DataLoader, TensorDataset
 
 app = Typer()
 
@@ -59,6 +62,7 @@ def get_train_val_loaders(pipeline_state_name: str):
     kf_val_tensor = torch.tensor(kf_val, dtype=torch.float32).permute(0, 3, 1, 2)
     qp_val_tensor = torch.tensor(qp_val, dtype=torch.float32).permute(0, 3, 1, 2)
 
+    # Flatten ensemble dimension with batch dimension: (Batch, Channels, Length)
     kf_train_flat = kf_train_tensor.flatten(0, 1)
     qp_train_flat = qp_train_tensor.flatten(0, 1)
     kf_val_flat = kf_val_tensor.flatten(0, 1)
@@ -84,8 +88,23 @@ def get_train_val_loaders(pipeline_state_name: str):
 
 @app.command()
 def train_nn():
+    device = (
+        "mps"
+        if torch.backends.mps.is_available()
+        else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+
+    model = CNNModel()
+    model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders()
-    pass
+
+    criterion = RMSEBiasLoss()
+    scheduler = torch.optim.Adam(
+        params=model.parameters(), lr=training_config.learning_rate
+    )
+
+    for epoch in tqdm(range(training_config.epochs), desc="Training CNN Model"):
+        continue
 
 
 if __name__ == "__main__":
