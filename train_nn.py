@@ -1,3 +1,6 @@
+import os
+from datetime import datetime
+
 import torch
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -16,6 +19,12 @@ app = Typer()
 settings = load_settings()
 training_config = settings.training_config
 
+trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
+trained_nn_model_path = (
+    f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
+)
+os.makedirs(trained_nn_model_path, exist_ok=True)
+
 
 @app.command()
 def load_generated_data(pipeline_state_name: str):
@@ -27,7 +36,7 @@ def load_generated_data(pipeline_state_name: str):
 
 
 @app.command()
-def get_train_val_loaders(pipeline_state_name: str):
+def get_train_val_loaders(pipeline_state_name: str, device: str):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
@@ -57,10 +66,18 @@ def get_train_val_loaders(pipeline_state_name: str):
         random_state=training_config.random_state_train_test_split,
     )
 
-    kf_train_tensor = torch.tensor(kf_train, dtype=torch.float32).permute(0, 3, 1, 2)
-    qp_train_tensor = torch.tensor(qp_train, dtype=torch.float32).permute(0, 3, 1, 2)
-    kf_val_tensor = torch.tensor(kf_val, dtype=torch.float32).permute(0, 3, 1, 2)
-    qp_val_tensor = torch.tensor(qp_val, dtype=torch.float32).permute(0, 3, 1, 2)
+    kf_train_tensor = torch.tensor(
+        kf_train, dtype=torch.float32, device=device
+    ).permute(0, 3, 1, 2)
+    qp_train_tensor = torch.tensor(
+        qp_train, dtype=torch.float32, device=device
+    ).permute(0, 3, 1, 2)
+    kf_val_tensor = torch.tensor(kf_val, dtype=torch.float32, device=device).permute(
+        0, 3, 1, 2
+    )
+    qp_val_tensor = torch.tensor(qp_val, dtype=torch.float32, device=device).permute(
+        0, 3, 1, 2
+    )
 
     # Flatten ensemble dimension with batch dimension: (Batch, Channels, Length)
     kf_train_flat = kf_train_tensor.flatten(0, 1)
@@ -87,7 +104,7 @@ def get_train_val_loaders(pipeline_state_name: str):
 
 
 @app.command()
-def train_nn():
+def train_nn(pipeline_state_name: str):
     device = (
         "mps"
         if torch.backends.mps.is_available()
@@ -96,15 +113,49 @@ def train_nn():
 
     model = CNNModel()
     model = model.to(device)
-    train_lodar, val_loader = get_train_val_loaders()
+    train_lodar, val_loader = get_train_val_loaders(pipeline_state_name, device)
 
     criterion = RMSEBiasLoss()
-    scheduler = torch.optim.Adam(
+    optimizer = torch.optim.Adam(
         params=model.parameters(), lr=training_config.learning_rate
     )
 
-    for epoch in tqdm(range(training_config.epochs), desc="Training CNN Model"):
-        continue
+    process_bar = tqdm(range(training_config.epochs), desc="Training CNN Model")
+    for epoch in process_bar:
+        summed_train_loss = 0
+        num_processed_train = 0
+        for kf_train_batch, qp_train_batch in train_lodar:
+            model.zero_grad()
+
+            pred_states_train = model(kf_train_batch)
+            loss = criterion(qp_train_batch, pred_states_train)
+            summed_train_loss += loss
+            num_processed_train += 1
+            loss.backward()
+            optimizer.step()
+
+        summed_val_loss = 0
+        num_processed_val = 0
+        for kf_val_batch, qp_val_batch in val_loader:
+            with torch.no_grad():
+                pred_state_val = model(kf_val_batch)
+                loss = criterion(qp_val_batch, pred_state_val)
+                summed_val_loss += loss
+                num_processed_val += 1
+
+        avg_loss_train = summed_train_loss / num_processed_train
+        avg_loss_val = summed_val_loss / num_processed_val
+        process_bar.set_postfix(
+            {"Train Loss": f"{avg_loss_train:.4f}", "Val Loss": f"{avg_loss_val:.4f}"}
+        )
+
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+
+    model_name = f"{training_config.model_save_name}-{timestamp}.pth"
+    model_save_path = os.path.join(trained_nn_model_path, model_name)
+
+    torch.save(model.state_dict(), model_save_path)
+    print(f"Saved the model to {model_save_path}.")
 
 
 if __name__ == "__main__":
