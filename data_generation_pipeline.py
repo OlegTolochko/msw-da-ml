@@ -1,3 +1,5 @@
+import os
+
 from dataclasses import dataclass
 from typing import Dict, Any
 import copy
@@ -17,7 +19,8 @@ from settings import load_settings
 
 settings = load_settings()
 global_config = settings.global_config
-state_path = f"{global_config.out_path}{global_config.model_out_filename}/"
+state_path = f"{global_config.out_path}{global_config.msw_model_out_filename}"
+os.makedirs(state_path, exist_ok=True)
 
 
 @dataclass
