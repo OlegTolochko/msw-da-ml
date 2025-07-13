@@ -11,6 +11,7 @@ class CNNModel(nn.Module):
     def __init__(self):
         super().__init__()
 
+        layers = []
         layers += [
             nn.Conv1d(
                 in_channels=network_config.in_channels,
@@ -48,6 +49,6 @@ class CNNModel(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        x[:, 2] = F.ReLU(x[:, 2])
+        x[:, 2] = F.relu(x[:, 2])
 
         return x
