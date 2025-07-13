@@ -47,6 +47,7 @@ training_config:
   batch_size: 32
   learning_rate: 0.001
   epochs: 100
+  model_save_name: model
 
 network_config:
   in_channels: 4
@@ -61,5 +62,6 @@ loss_config:
 global_config:
   out_path: ./out/
   animation_out_filename: animation/
-  model_out_filename: models/
+  msw_model_out_filename: msw_models/
+  trained_nn_model_out_filename: trained_nn_models/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

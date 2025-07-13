@@ -51,6 +51,8 @@ class TrainingConfig(BaseModel):
     random_state_train_test_split: int
     batch_size: int
     learning_rate: float
+    epochs: int
+    model_save_name: str
 
 
 class NetworkConfig(BaseModel):
@@ -68,7 +70,8 @@ class LossConfig(BaseModel):
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
-    model_out_filename: str
+    msw_model_out_filename: str
+    trained_nn_model_out_filename: str
     base_seed: int
 
 
