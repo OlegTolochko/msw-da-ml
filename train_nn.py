@@ -124,6 +124,8 @@ def train_nn(pipeline_state_name: str):
     for epoch in process_bar:
         summed_train_loss = 0
         num_processed_train = 0
+
+        model.train()
         for kf_train_batch, qp_train_batch in train_lodar:
             model.zero_grad()
 
@@ -136,8 +138,10 @@ def train_nn(pipeline_state_name: str):
 
         summed_val_loss = 0
         num_processed_val = 0
-        for kf_val_batch, qp_val_batch in val_loader:
-            with torch.no_grad():
+
+        model.eval()
+        with torch.no_grad():
+            for kf_val_batch, qp_val_batch in val_loader:
                 pred_state_val = model(kf_val_batch)
                 loss = criterion(qp_val_batch, pred_state_val)
                 summed_val_loss += loss
