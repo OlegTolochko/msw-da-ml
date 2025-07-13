@@ -20,10 +20,11 @@ class ModifiedShallowWaterModel:
         self.gaussian_wind_perturbation = self.generate_gaussian_noise()
 
         self.current_state = None
-        self.full_state_history = []
         self.nsub_state_history = []
 
-    def initialize(self, num_init_steps: int = 8, exclude_from_state_history: bool = True):
+    def initialize(
+        self, num_init_steps: int = 8, exclude_from_state_history: bool = True
+    ):
         """initializes the initial shallow water model"""
         u = np.zeros((self.config.ngrid, self.num_ensemble_members))
         h = np.zeros((self.config.ngrid, self.num_ensemble_members))
@@ -39,8 +40,7 @@ class ModifiedShallowWaterModel:
 
         if exclude_from_state_history:
             self.nsub_state_history = [self.nsub_state_history[-1]]
-            self.full_state_history = [self.nsub_state_history[-1]]
-        
+
         return init_state
 
     def msw_step(
@@ -207,7 +207,6 @@ class ModifiedShallowWaterModel:
 
         phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
-        self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
         self.current_state = present_state[:, 1 : self.config.ngrid + 1]
 
         for step in range(self.config.num_sub_steps):
@@ -215,7 +214,6 @@ class ModifiedShallowWaterModel:
             past_state, present_state, future_state = self.msw_step(
                 past_state, present_state, future_state, phi, wind_perturbation
             )
-            self.full_state_history.append(present_state[:, 1 : self.config.ngrid + 1])
 
         self.nsub_state_history.append(
             future_state[:, 1 : self.config.ngrid + 1].copy()
@@ -262,9 +260,6 @@ class ModifiedShallowWaterModel:
     def get_current_state(self):
         return self.current_state
 
-    def get_full_state_history(self):
-        return self.full_state_history
-
     def get_nsub_state_history(self):
         return self.nsub_state_history
 
@@ -277,7 +272,6 @@ class ModifiedShallowWaterModel:
                 f"Trying to update model with state shapes of {self.current_state.shape}, with a state of shape {new_state.shape}"
             )
         self.current_state = new_state
-        self.full_state_history.append(new_state)
 
     def save_current_model_state(self, save_directory="./out/"):
         """saves model state as .npy (.npz) file"""
@@ -292,7 +286,6 @@ class ModifiedShallowWaterModel:
             full_save_path,
             current_state=self.current_state,
             nsub_state_history=self.nsub_state_history,
-            full_state_history=self.full_state_history,
             num_ensemble_members=self.num_ensemble_members,
             random_state=random_state,
         )
@@ -303,7 +296,6 @@ class ModifiedShallowWaterModel:
         with np.load(load_path, allow_pickle=True) as data:
             current_state = data["current_state"]
             nsub_state_history = data["nsub_state_history"]
-            full_state_history = data["full_state_history"]
             num_ensemble_members = int(data["num_ensemble_members"])
             random_state = data["random_state"].item()
 
@@ -316,7 +308,6 @@ class ModifiedShallowWaterModel:
         )
         model.current_state = current_state
         model.nsub_state_history = nsub_state_history
-        model.full_state_history = full_state_history
 
         return model
 

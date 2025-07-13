@@ -46,16 +46,41 @@ class ObservationGenerationConfig(BaseModel):
     grid_point_influence: int
 
 
+class TrainingConfig(BaseModel):
+    val_split_size: float
+    random_state_train_test_split: int
+    batch_size: int
+    learning_rate: float
+    epochs: int
+    model_save_name: str
+
+
+class NetworkConfig(BaseModel):
+    in_channels: int
+    hidden_channels: int
+    num_layers: int
+    kernel_size: int
+
+
+class LossConfig(BaseModel):
+    variable_to_punish_idx: int
+    bias_loss_weight: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
-    model_out_filename: str
+    msw_model_out_filename: str
+    trained_nn_model_out_filename: str
     base_seed: int
 
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
     observation_generation_config: ObservationGenerationConfig
+    training_config: TrainingConfig
+    network_config: NetworkConfig
+    loss_config: LossConfig
     global_config: GlobalConfig
 
 
