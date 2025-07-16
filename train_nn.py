@@ -104,7 +104,11 @@ def get_train_val_loaders(pipeline_state_name: str, device: str):
 
 
 @app.command()
-def train_nn(pipeline_state_name: str):
+def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
+    """
+    Traines the CNN Model based on training data given from a pipeline state.
+    Saves the trained model weights under the trained_nn_model_path set in the config.
+    """
     device = (
         "mps"
         if torch.backends.mps.is_available()
@@ -125,6 +129,7 @@ def train_nn(pipeline_state_name: str):
         summed_train_loss = 0
         num_processed_train = 0
 
+        # main training loop
         model.train()
         for kf_train_batch, qp_train_batch in train_lodar:
             model.zero_grad()
@@ -139,6 +144,7 @@ def train_nn(pipeline_state_name: str):
         summed_val_loss = 0
         num_processed_val = 0
 
+        # calculate loss on validation data
         model.eval()
         with torch.no_grad():
             for kf_val_batch, qp_val_batch in val_loader:
@@ -153,9 +159,12 @@ def train_nn(pipeline_state_name: str):
             {"Train Loss": f"{avg_loss_train:.4f}", "Val Loss": f"{avg_loss_val:.4f}"}
         )
 
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    model_name = f"{training_config.model_save_name}"
+    if include_timestamp_in_name:
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        model_name += f"-{timestamp}"
 
-    model_name = f"{training_config.model_save_name}-{timestamp}.pth"
+    model_name += ".pth"
     model_save_path = os.path.join(trained_nn_model_path, model_name)
 
     torch.save(model.state_dict(), model_save_path)
