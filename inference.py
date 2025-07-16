@@ -4,6 +4,8 @@ import torch
 
 from network import CNNModel
 from settings import load_settings
+from assimilation import kf_assimilate
+from msw_model import ModifiedShallowWaterModel
 
 settings = load_settings()
 training_config = settings.training_config
@@ -12,18 +14,6 @@ trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_file
 trained_nn_model_path = (
     f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
 )
-
-    
-def load_trained_model(load_path: str, device: any):
-    model = CNNModel()
- 
-    state_dict = torch.load(load_path, map_location=device)
-
-    model.load_state_dict(state_dict, strict=True)
-    print("Model weights loaded successfully.")
-    model.to(device)
-    model.eval()
-    return model
 
 
 def get_most_recent_model_name():
@@ -38,13 +28,7 @@ def get_most_recent_model_name():
     return most_recent_model.path
 
 
-def inference(load_model_name: str = ""):
-    device = (
-        "mps"
-        if torch.backends.mps.is_available()
-        else ("cuda" if torch.cuda.is_available() else "cpu")
-    )
-
+def load_trained_model(load_model_name: str, device: any):
     if not load_model_name:
         load_model_name = get_most_recent_model_name()
 
@@ -52,4 +36,34 @@ def inference(load_model_name: str = ""):
         load_model_name += ".pth"
 
     model_load_path = f"{trained_nn_model_path}{load_model_name}"
-    model = load_trained_model(load_model_name, device)
+
+    model = CNNModel()
+
+    state_dict = torch.load(model_load_path, map_location=device)
+
+    model.load_state_dict(state_dict, strict=True)
+    print("Model weights loaded successfully.")
+    model.to(device)
+    model.eval()
+
+    return model
+
+
+def inference(load_model_name: str = ""):
+    device = (
+        "mps"
+        if torch.backends.mps.is_available()
+        else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+    load_trained_model(load_model_name, device)
+
+    truth_state = ModifiedShallowWaterModel(num_ensemble_members=1).initialize()
+    ensemble_state = ModifiedShallowWaterModel(num_ensemble_members=10).initialize()
+
+
+def compare_models():
+    pass
+
+
+def visualize_update_performance():
+    pass
