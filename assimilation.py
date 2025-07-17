@@ -78,6 +78,7 @@ def generate_radar_masks(
 def qpens_assimilate(ensemble, observation, observation_position):
     """
     Calculates an ensemble update, while enforcing physical constraints.
+    Solves an optimization problem for each ensemble member indepentently.
     """
     observation_position_flat = np.concat(observation_position, axis=0)
 
@@ -197,6 +198,8 @@ def kf_assimilate(ensemble, observation, observation_position):
     """
     Updates an ensemble state utilizing the Kalman Filter with an observation and its position,
     not guaranteeing physical consistency.
+    It decides based on the covariance of the preliminary predictions how much to trust
+    the prediction in comparison to the observations.
 
     notes:
         matrices states are flattend for an efficient and simplified calculation of the kalman update
@@ -256,6 +259,13 @@ def calculate_obs_covariance_error(num_grid_points, observation_position_flat):
 def calculate_background_covariance_error(
     ensemble: np.ndarray, num_ensemble_members: int, num_grid_points: int
 ):
+    """
+    Calculates the background error covariance matrix from ensemble deviations.
+
+    It calculates the uncertainty (variance) at each individual grid points across ensemble members
+    and the correlations between different grid points and the variables (u, h, r), with a max
+    max influence range of grid_point_influence.
+    """
     ens_mean_difference = np.sqrt(
         obs_config.cov_inflation / (num_ensemble_members - 1)
     ) * (ensemble - np.mean(ensemble, axis=2, keepdims=True))
@@ -265,6 +275,6 @@ def calculate_background_covariance_error(
     cov_error = np.dot(flat_state, flat_state.T)
     cov_error = cov_error * calculate_localization_matrix(
         num_grid_points=num_grid_points,
-        grid_point_influence=2,
+        grid_point_influence=obs_config.grid_point_influence,
     )
     return cov_error
