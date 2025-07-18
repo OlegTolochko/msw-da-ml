@@ -1,8 +1,8 @@
 import numpy as np
-from numpy.random import PCG64
-from settings import load_settings
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+
+from settings import load_settings
 
 
 class EnsembleModel:
