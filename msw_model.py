@@ -127,11 +127,6 @@ class ShallowWaterPhysics:
         state_present = self.add_ghost_cells(state_present)
 
         # Update ghost cells
-        state_past[:, 0] = state_past[:, self.config.ngrid]
-        state_present[:, 0] = state_present[:, self.config.ngrid]
-        state_past[:, self.config.ngrid + 1] = state_past[:, 1]
-        state_present[:, self.config.ngrid + 1] = state_present[:, 1]
-
         state_future = np.zeros_like(state_present)
 
         u_past, h_past, r_past = state_past
@@ -245,43 +240,12 @@ class ShallowWaterPhysics:
         )
 
     def add_ghost_cells(self, state):
-        pass
+        state_ghost = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
 
-    def apply_nsub_steps(self, state: np.ndarray = None):
-        """Applies nsub shallow water model steps to a given state
-        Args:
-            state: the previous water shallow model state,
-                        Shape: (3, num_grid_cells, num_ensemble_members)
-
-        Returns:
-            updated_state: Updated state after nsub steps
-        """
-        if state is None:
-            state = self.current_state
-
-        # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
-        past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-        present_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-        future_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-
-        # prepare state for leapfrog method by introducing a past, present and future dimension
-        past_state[:, 1 : self.config.ngrid + 1] = state
-        present_state[:, 1 : self.config.ngrid + 1] = state
-        future_state[:, 1 : self.config.ngrid + 1] = state
-
-        self.current_state = present_state[:, 1 : self.config.ngrid + 1]
-
-        for step in range(self.config.num_sub_steps):
-            wind_perturbation = self.generate_wind_perturbation()
-            past_state, present_state, future_state = self.msw_step(
-                past_state, present_state, future_state, phi, wind_perturbation
-            )
-
-        self.nsub_state_history.append(
-            future_state[:, 1 : self.config.ngrid + 1].copy()
-        )
-        self.current_state = future_state[:, 1 : self.config.ngrid + 1]
-        return future_state[:, 1 : self.config.ngrid + 1]
+        state_ghost[:, 1 : self.config.ngrid + 1] = state
+        state_ghost[:, 0] = state[:, self.config.ngrid]
+        state_ghost[:, -1] = state[:, 1]
+        return state_ghost
 
 
 def animate_evolution_from_history(
