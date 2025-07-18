@@ -9,6 +9,10 @@ obs_config = settings.observation_generation_config
 
 
 class BaseAssimilation(ABC):
+    @abstractmethod
+    def assimilate(self, ensemble, obseravtion, obseravation_mask):
+        pass
+
     def calculate_gaspari_cohn(self, z: np.ndarray):
         """
         Calculates the Gaspari-Cohn function for normalized distances z.
@@ -38,7 +42,9 @@ class BaseAssimilation(ABC):
 
         return rho
 
-    def calculate_localization_matrix(self, num_grid_points: int, grid_point_influence: int):
+    def calculate_localization_matrix(
+        self, num_grid_points: int, grid_point_influence: int
+    ):
         """
         Calculates the localization matrix.
         Limits neighboring grid cell influence with a max influence distance of grid_point_influence.
@@ -57,8 +63,10 @@ class BaseAssimilation(ABC):
         expanded_localization_matrix = np.tile(localization_matrix, (3, 3))
 
         return expanded_localization_matrix
-    
-    def calculate_obs_covariance_error(self, num_grid_points, observation_position_flat):
+
+    def calculate_obs_covariance_error(
+        self, num_grid_points, observation_position_flat
+    ):
         u_var = np.tile(obs_config.u_error_std**2, num_grid_points)
         h_var = np.tile(obs_config.h_error_std**2, num_grid_points)
         r_var = np.tile(
@@ -69,9 +77,8 @@ class BaseAssimilation(ABC):
         var_flat = np.concat([u_var, h_var, r_var])[observation_position_flat]
         return var_flat
 
-
-    def calculate_background_covariance_error(self,
-        ensemble: np.ndarray, num_ensemble_members: int, num_grid_points: int
+    def calculate_background_covariance_error(
+        self, ensemble: np.ndarray, num_ensemble_members: int, num_grid_points: int
     ):
         """
         Calculates the background error covariance matrix from ensemble deviations.
@@ -94,12 +101,124 @@ class BaseAssimilation(ABC):
         return cov_error
 
 
-class QPEnsembleAssimilation(BaseAssimilation):
-    pass
+class QPEnsemble(BaseAssimilation):
+    def assimilate(self, ensemble, observation, observation_position):
+        """
+        Calculates an ensemble update, while enforcing physical constraints.
+        Solves an optimization problem for each ensemble member indepentently.
+        """
+        observation_position_flat = np.concat(observation_position, axis=0)
+
+        num_ensemble_members = ensemble.shape[2]
+        num_grid_points = ensemble.shape[1]
+
+        var_flat = self.calculate_obs_covariance_error(
+            num_grid_points=num_grid_points,
+            observation_position_flat=observation_position_flat,
+        )
+
+        ens_obs_difference = (
+            observation[observation_position] - ensemble[observation_position]
+        )
+
+        cov_error = self.calculate_background_covariance_error(
+            ensemble=ensemble,
+            num_ensemble_members=num_ensemble_members,
+            num_grid_points=num_grid_points,
+        )
+        eigen_vectors, singular_values, eigen_vectors_transposed = np.linalg.svd(
+            cov_error, full_matrices=True
+        )
+        cov_error_sqrt = np.dot(eigen_vectors, np.diag(np.sqrt(singular_values)))
+        cov_error_sqrt_obs = cov_error_sqrt[observation_position_flat]
+
+        weighed_uncertainty = np.divide(cov_error_sqrt_obs, var_flat[:, None])
+
+        hessian = np.identity(num_grid_points * 3) + np.dot(
+            cov_error_sqrt_obs.T, weighed_uncertainty
+        )
+
+        rain_mask = np.arange(num_grid_points * 2, num_grid_points * 3)
+        height_mask = np.arange(num_grid_points, num_grid_points * 2)
+
+        mass_conservation_constraint = np.dot(
+            np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_mask])
+        )
+        qpens_solution = np.zeros((num_grid_points * 3, num_ensemble_members))
+        for ens_idx in range(num_ensemble_members):
+            observation_update_direction = np.dot(
+                -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
+            )
+            cvxopt.solvers.options["show_progress"] = False
+            ens_solution = cvxopt.solvers.qp(
+                cvxopt.matrix(hessian),
+                cvxopt.matrix(observation_update_direction),
+                cvxopt.matrix(-cov_error_sqrt[rain_mask]),
+                cvxopt.matrix(ensemble[2, :, ens_idx]),
+                cvxopt.matrix(mass_conservation_constraint),
+                cvxopt.matrix(np.zeros((1, 1))),
+            )
+            qpens_solution[:, ens_idx] = np.asarray(ens_solution["x"]).reshape(-1)
+
+        ensemble_update_flat = np.dot(cov_error_sqrt, qpens_solution)
+        u_update = ensemble_update_flat[0:num_grid_points]
+        h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
+        r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
+        ensemble_update = np.stack([u_update, h_update, r_update])
+
+        ensemble_updated = ensemble + ensemble_update
+        return ensemble_updated
 
 
-class EnKFAssimilation(BaseAssimilation):
-    pass
+class EnKF(BaseAssimilation):
+    def assimilate(self, ensemble, observation, observation_position):
+        """
+        Updates an ensemble state utilizing the Kalman Filter with an observation and its position,
+        not guaranteeing physical consistency.
+        It decides based on the covariance of the preliminary predictions how much to trust
+        the prediction in comparison to the observations.
+
+        notes:
+            matrices states are flattend for an efficient and simplified calculation of the kalman update
+        """
+        observation_position_flat = np.concat(observation_position, axis=0)
+
+        num_ensemble_members = ensemble.shape[2]
+        num_grid_points = ensemble.shape[1]
+
+        var_flat = self.calculate_obs_covariance_error(
+            num_grid_points=num_grid_points,
+            observation_position_flat=observation_position_flat,
+        )
+        cov_error = self.calculate_background_covariance_error(
+            ensemble=ensemble,
+            num_ensemble_members=num_ensemble_members,
+            num_grid_points=num_grid_points,
+        )
+
+        kalman_gain = np.dot(
+            cov_error[:, observation_position_flat],
+            np.linalg.inv(
+                cov_error[np.ix_(observation_position_flat, observation_position_flat)]
+                + np.diag(var_flat)
+            ),
+        )
+
+        # apply kalman update to our ensemble
+        ens_obs_difference = (
+            observation[observation_position] - ensemble[observation_position]
+        )
+
+        ensemble_update_flat = np.concat(ensemble, axis=0) + np.dot(
+            kalman_gain, ens_obs_difference
+        )
+
+        u_update = ensemble_update_flat[0:num_grid_points]
+        h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
+        r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
+        ensemble_updated = np.stack([u_update, h_update, r_update])
+
+        return ensemble_updated
 
 
 def generate_observation(
@@ -169,122 +288,3 @@ def generate_radar_masks(
     u_mask[clear_sky_observations] = 0
 
     return np.stack([u_mask, h_mask, r_mask]) == 0
-
-
-def qpens_assimilate(ensemble, observation, observation_position):
-    """
-    Calculates an ensemble update, while enforcing physical constraints.
-    Solves an optimization problem for each ensemble member indepentently.
-    """
-    observation_position_flat = np.concat(observation_position, axis=0)
-
-    num_ensemble_members = ensemble.shape[2]
-    num_grid_points = ensemble.shape[1]
-
-    var_flat = calculate_obs_covariance_error(
-        num_grid_points=num_grid_points,
-        observation_position_flat=observation_position_flat,
-    )
-
-    ens_obs_difference = (
-        observation[observation_position] - ensemble[observation_position]
-    )
-
-    cov_error = calculate_background_covariance_error(
-        ensemble=ensemble,
-        num_ensemble_members=num_ensemble_members,
-        num_grid_points=num_grid_points,
-    )
-    eigen_vectors, singular_values, eigen_vectors_transposed = np.linalg.svd(
-        cov_error, full_matrices=True
-    )
-    cov_error_sqrt = np.dot(eigen_vectors, np.diag(np.sqrt(singular_values)))
-    cov_error_sqrt_obs = cov_error_sqrt[observation_position_flat]
-
-    weighed_uncertainty = np.divide(cov_error_sqrt_obs, var_flat[:, None])
-
-    hessian = np.identity(num_grid_points * 3) + np.dot(
-        cov_error_sqrt_obs.T, weighed_uncertainty
-    )
-
-    rain_mask = np.arange(num_grid_points * 2, num_grid_points * 3)
-    height_mask = np.arange(num_grid_points, num_grid_points * 2)
-
-    mass_conservation_constraint = np.dot(
-        np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_mask])
-    )
-    qpens_solution = np.zeros((num_grid_points * 3, num_ensemble_members))
-    for ens_idx in range(num_ensemble_members):
-        observation_update_direction = np.dot(
-            -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
-        )
-        cvxopt.solvers.options["show_progress"] = False
-        ens_solution = cvxopt.solvers.qp(
-            cvxopt.matrix(hessian),
-            cvxopt.matrix(observation_update_direction),
-            cvxopt.matrix(-cov_error_sqrt[rain_mask]),
-            cvxopt.matrix(ensemble[2, :, ens_idx]),
-            cvxopt.matrix(mass_conservation_constraint),
-            cvxopt.matrix(np.zeros((1, 1))),
-        )
-        qpens_solution[:, ens_idx] = np.asarray(ens_solution["x"]).reshape(-1)
-
-    ensemble_update_flat = np.dot(cov_error_sqrt, qpens_solution)
-    u_update = ensemble_update_flat[0:num_grid_points]
-    h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
-    r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
-    ensemble_update = np.stack([u_update, h_update, r_update])
-
-    ensemble_updated = ensemble + ensemble_update
-    return ensemble_updated
-
-
-
-def kf_assimilate(ensemble, observation, observation_position):
-    """
-    Updates an ensemble state utilizing the Kalman Filter with an observation and its position,
-    not guaranteeing physical consistency.
-    It decides based on the covariance of the preliminary predictions how much to trust
-    the prediction in comparison to the observations.
-
-    notes:
-        matrices states are flattend for an efficient and simplified calculation of the kalman update
-    """
-    observation_position_flat = np.concat(observation_position, axis=0)
-
-    num_ensemble_members = ensemble.shape[2]
-    num_grid_points = ensemble.shape[1]
-
-    var_flat = calculate_obs_covariance_error(
-        num_grid_points=num_grid_points,
-        observation_position_flat=observation_position_flat,
-    )
-    cov_error = calculate_background_covariance_error(
-        ensemble=ensemble,
-        num_ensemble_members=num_ensemble_members,
-        num_grid_points=num_grid_points,
-    )
-
-    kalman_gain = np.dot(
-        cov_error[:, observation_position_flat],
-        np.linalg.inv(
-            cov_error[np.ix_(observation_position_flat, observation_position_flat)]
-            + np.diag(var_flat)
-        ),
-    )
-
-    # apply kalman update to our ensemble
-    ens_obs_difference = (
-        observation[observation_position] - ensemble[observation_position]
-    )
-
-    ensemble_update_flat = np.concat(ensemble, axis=0) + np.dot(
-        kalman_gain, ens_obs_difference
-    )
-
-    u_update = ensemble_update_flat[0:num_grid_points]
-    h_update = ensemble_update_flat[num_grid_points : 2 * num_grid_points]
-    r_update = ensemble_update_flat[2 * num_grid_points : 3 * num_grid_points]
-    ensemble_updated = np.stack([u_update, h_update, r_update])
-
-    return ensemble_updated
