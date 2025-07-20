@@ -37,7 +37,15 @@ class EnsembleModel:
 
         self.history.append(self.state.copy())
         return self.state
-
+    
+    def assimilate(self, new_state: np.ndarray):
+        """Updates the models current state with an assimilated state."""
+        if self.state.shape != new_state.shape:
+            raise ValueError("Shape of new state does not match current state.")
+        
+        self.state = new_state
+        self.history[-1] = self.state.copy()
+    
     def propagate(self):
         """Propagates the model state forward by nsub_steps"""
         past = self.state.copy()
@@ -249,7 +257,7 @@ class ShallowWaterPhysics:
 
 
 def animate_evolution_from_history(
-    state_history, save_path="./out/model_evolution.mp4"
+    state_history: list, save_path: str ="./out/model_evolution.mp4"
 ):
     ngrid = state_history[0].shape[1]
     fig, ax = plt.subplots(figsize=(10, 6))
