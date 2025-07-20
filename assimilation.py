@@ -5,7 +5,7 @@ from settings import load_settings
 import cvxopt
 
 settings = load_settings()
-obs_config = settings.observation_generation_config
+assimilation_config = settings.shared_obs_gen_assimilation_config
 
 
 class BaseAssimilation(ABC):
@@ -67,11 +67,14 @@ class BaseAssimilation(ABC):
     def calculate_obs_covariance_error(
         self, num_grid_points, observation_position_flat
     ):
-        u_var = np.tile(obs_config.u_error_std**2, num_grid_points)
-        h_var = np.tile(obs_config.h_error_std**2, num_grid_points)
+        u_var = np.tile(assimilation_config.u_error_std**2, num_grid_points)
+        h_var = np.tile(assimilation_config.h_error_std**2, num_grid_points)
         r_var = np.tile(
-            np.exp(obs_config.r_error_std**2)
-            * np.exp(2 * obs_config.r_error_mean + obs_config.r_error_std**2),
+            np.exp(assimilation_config.r_error_std**2)
+            * np.exp(
+                2 * assimilation_config.r_error_mean
+                + assimilation_config.r_error_std**2
+            ),
             num_grid_points,
         )
         var_flat = np.concat([u_var, h_var, r_var])[observation_position_flat]
@@ -88,7 +91,7 @@ class BaseAssimilation(ABC):
         max influence range of grid_point_influence.
         """
         ens_mean_difference = np.sqrt(
-            obs_config.cov_inflation / (num_ensemble_members - 1)
+            assimilation_config.cov_inflation / (num_ensemble_members - 1)
         ) * (ensemble - np.mean(ensemble, axis=2, keepdims=True))
         flat_state = np.concat(
             ens_mean_difference, axis=0
@@ -96,7 +99,7 @@ class BaseAssimilation(ABC):
         cov_error = np.dot(flat_state, flat_state.T)
         cov_error = cov_error * self.calculate_localization_matrix(
             num_grid_points=num_grid_points,
-            grid_point_influence=obs_config.grid_point_influence,
+            grid_point_influence=assimilation_config.grid_point_influence,
         )
         return cov_error
 
@@ -170,7 +173,7 @@ class QPEnsemble(BaseAssimilation):
         return ensemble_updated
 
 
-class EnKF(BaseAssimilation):
+class EnsembleKalmanFilter(BaseAssimilation):
     def assimilate(self, ensemble, observation, observation_position):
         """
         Updates an ensemble state utilizing the Kalman Filter with an observation and its position,
@@ -219,72 +222,3 @@ class EnKF(BaseAssimilation):
         ensemble_updated = np.stack([u_update, h_update, r_update])
 
         return ensemble_updated
-
-
-def generate_observation(
-    truth_state: np.ndarray,
-    num_ensemble_members: int,
-    random_generator: np.random.Generator,
-):
-    """
-    Generates an ensemble of observations from a passed state.
-    """
-    num_grid_points = truth_state.shape[1]
-    ensemble_shape = (num_ensemble_members, num_grid_points)
-
-    u_error = random_generator.normal(
-        loc=obs_config.u_error_mean,
-        scale=obs_config.u_error_std,
-        size=ensemble_shape,
-    )
-    h_error = random_generator.normal(
-        loc=obs_config.h_error_mean,
-        scale=obs_config.h_error_std,
-        size=ensemble_shape,
-    )
-    r_error = random_generator.lognormal(
-        mean=obs_config.r_error_mean,
-        sigma=obs_config.r_error_std,
-        size=ensemble_shape,
-    )
-
-    error_ensemble = np.transpose(
-        np.stack([u_error, h_error, r_error], axis=1), (1, 2, 0)
-    )
-    observation_ensemble = truth_state + error_ensemble
-
-    return observation_ensemble
-
-
-def generate_radar_masks(
-    state_truth: np.ndarray, random_generator: np.random.Generator
-):
-    """
-    Calculates a random mask for where observations are actually observed.
-    Its idea is to mimic radar behavior. It observes all 3 variables in rainy areas
-    and else only wind with a chance set in the config.
-    """
-    num_grid_points = state_truth.shape[1]
-
-    u_mask = np.ones(num_grid_points)
-    h_mask = np.ones(num_grid_points)
-    r_mask = np.ones(num_grid_points)
-
-    is_raining = state_truth[2, :, 0] > obs_config.radar_rain_threshold
-
-    clear_sky_observations = random_generator.choice(
-        a=[True, False],
-        size=num_grid_points,
-        p=[
-            obs_config.radar_no_rain_observation_percentage,
-            1 - obs_config.radar_no_rain_observation_percentage,
-        ],
-    )
-
-    u_mask[is_raining] = 0
-    h_mask[is_raining] = 0
-    r_mask[is_raining] = 0
-
-    u_mask[clear_sky_observations] = 0
-
-    return np.stack([u_mask, h_mask, r_mask]) == 0
