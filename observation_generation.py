@@ -10,7 +10,7 @@ obs_config = settings.shared_obs_gen_assimilation_config
 
 @dataclass
 class ObservationData:
-    observations: np.ndarray
+    observation: np.ndarray
     locations: np.ndarray
 
 
@@ -22,11 +22,11 @@ class ObservationGenerator:
     def generate_observations_with_locations(
         self, truth_state: np.ndarray, num_ensemble_members: int
     ) -> ObservationData:
-        observations = generate_observation(
+        observation = generate_observation(
             truth_state, num_ensemble_members, self.obs_random_generator
         )
         locations = generate_radar_masks(truth_state, self.radar_random_generator)
-        return ObservationData(observations, locations)
+        return ObservationData(observation, locations)
 
 
 def generate_observation(
