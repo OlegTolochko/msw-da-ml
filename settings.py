@@ -32,7 +32,7 @@ class WaterModelConfig(BaseModel):
     wind_perturbation_noise_amplitude: float
 
 
-class ObservationGenerationConfig(BaseModel):
+class SharedObsGenAssimilationConfig(BaseModel):
     u_error_std: float
     u_error_mean: float
     h_error_std: float
@@ -77,7 +77,7 @@ class GlobalConfig(BaseModel):
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
-    observation_generation_config: ObservationGenerationConfig
+    shared_obs_gen_assimilation_config: SharedObsGenAssimilationConfig
     training_config: TrainingConfig
     network_config: NetworkConfig
     loss_config: LossConfig

@@ -28,14 +28,14 @@ water_model_config:
   wind_perturbation_standard_deviation: 4
   wind_perturbation_noise_amplitude: 0.002
 
-observation_generation_config:
+shared_obs_gen_assimilation_config:
   u_error_std: 0.001
   u_error_mean: 0.0
   h_error_std: 0.01
   h_error_mean: 0.0
   r_error_std: 1.5
   r_error_mean: -8.0
-
+  
   radar_rain_threshold: 0.005 # threshold for rain to observed by radar
   radar_no_rain_observation_percentage: 0.1 # percentage of no rain locations radar observes
   cov_inflation: 1.0
