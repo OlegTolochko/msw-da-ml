@@ -15,7 +15,7 @@ class EnsembleModel:
         settings = load_settings()
         self.config = settings.water_model_config
 
-        self.physics_engine = ShallowWaterPhysics(self.config)
+        self.physics_engine = ShallowWaterPhysics(self.config, num_ensemble_members)
         self.gaussian_wind_perturbation = self._generate_gaussian_noise()
 
         self.state = None
@@ -37,15 +37,18 @@ class EnsembleModel:
 
         self.history.append(self.state.copy())
         return self.state
-    
+
     def assimilate(self, new_state: np.ndarray):
         """Updates the models current state with an assimilated state."""
         if self.state.shape != new_state.shape:
             raise ValueError("Shape of new state does not match current state.")
-        
+
         self.state = new_state
-        self.history[-1] = self.state.copy()
-    
+        if self.history:
+            self.history[-1] = self.state.copy()
+        else:
+            raise ValueError("The current class instance has no history to correct.")
+
     def propagate(self):
         """Propagates the model state forward by nsub_steps"""
         past = self.state.copy()
@@ -106,8 +109,9 @@ class EnsembleModel:
 
 
 class ShallowWaterPhysics:
-    def __init__(self, config):
+    def __init__(self, config, num_ensemble_members: int):
         self.config = config
+        self.num_ensemble_members = num_ensemble_members
 
     def step(
         self,
@@ -257,7 +261,7 @@ class ShallowWaterPhysics:
 
 
 def animate_evolution_from_history(
-    state_history: list, save_path: str ="./out/model_evolution.mp4"
+    state_history: list, save_path: str = "./out/model_evolution.mp4"
 ):
     ngrid = state_history[0].shape[1]
     fig, ax = plt.subplots(figsize=(10, 6))
