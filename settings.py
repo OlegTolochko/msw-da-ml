@@ -46,15 +46,6 @@ class SharedObsGenAssimilationConfig(BaseModel):
     grid_point_influence: int
 
 
-class TrainingConfig(BaseModel):
-    val_split_size: float
-    random_state_train_test_split: int
-    batch_size: int
-    learning_rate: float
-    epochs: int
-    model_save_name: str
-
-
 class NetworkConfig(BaseModel):
     in_channels: int
     hidden_channels: int
@@ -65,6 +56,20 @@ class NetworkConfig(BaseModel):
 class LossConfig(BaseModel):
     variable_to_punish_idx: int
     bias_loss_weight: int
+
+
+class TrainingConfig(BaseModel):
+    val_split_size: float
+    random_state_train_test_split: int
+    batch_size: int
+    learning_rate: float
+    epochs: int
+    model_save_name: str
+
+
+class InferenceConfig(BaseModel):
+    inference_seed: int
+    num_ensemble_members: int
 
 
 class GlobalConfig(BaseModel):
@@ -78,9 +83,10 @@ class GlobalConfig(BaseModel):
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
     shared_obs_gen_assimilation_config: SharedObsGenAssimilationConfig
-    training_config: TrainingConfig
     network_config: NetworkConfig
     loss_config: LossConfig
+    training_config: TrainingConfig
+    inference_config: InferenceConfig
     global_config: GlobalConfig
 
 
