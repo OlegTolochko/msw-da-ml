@@ -1,14 +1,16 @@
 import os
-
 import torch
+import numpy as np
 
 from network import CNNModel
 from settings import load_settings
-from assimilation import kf_assimilate
-from msw_model import ModifiedShallowWaterModel
+from assimilation import EnsembleKalmanFilter
+from observation_generation import ObservationGenerator
+from msw_model import EnsembleModel
+from random_manager import RandomGenerators
 
 settings = load_settings()
-training_config = settings.training_config
+inference_config = settings.inference_config
 
 trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
 trained_nn_model_path = (
@@ -20,17 +22,19 @@ def get_most_recent_model_name():
     most_recent_model = None
     most_recent_time = 0
     for model in os.scandir(trained_nn_model_path):
-        if model.is_file():
+        if model.is_file() and model.name.endswith(".pth"):
             mod_time = model.stat().st_mtime_ns
             if mod_time > most_recent_time:
                 most_recent_model = model
                 most_recent_time = mod_time
-    return most_recent_model.path
+    return most_recent_model.path if most_recent_model else None
 
 
-def load_trained_model(load_model_name: str, device: any):
+def load_trained_model(load_model_name: str, device):
     if not load_model_name:
         load_model_name = get_most_recent_model_name()
+        if not load_model_name:
+            raise FileNotFoundError("No model files found")
 
     if not load_model_name.endswith(".pth"):
         load_model_name += ".pth"
@@ -38,9 +42,7 @@ def load_trained_model(load_model_name: str, device: any):
     model_load_path = f"{trained_nn_model_path}{load_model_name}"
 
     model = CNNModel()
-
     state_dict = torch.load(model_load_path, map_location=device)
-
     model.load_state_dict(state_dict, strict=True)
     print("Model weights loaded successfully.")
     model.to(device)
@@ -49,16 +51,54 @@ def load_trained_model(load_model_name: str, device: any):
     return model
 
 
-def inference(load_model_name: str = ""):
+def inference(num_inference_steps: int, load_model_name: str = ""):
     device = (
         "mps"
         if torch.backends.mps.is_available()
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    load_trained_model(load_model_name, device)
+    model = load_trained_model(load_model_name, device)
 
-    truth_state = ModifiedShallowWaterModel(num_ensemble_members=1).initialize()
-    ensemble_state = ModifiedShallowWaterModel(num_ensemble_members=10).initialize()
+    enkf = EnsembleKalmanFilter()
+    rngs = RandomGenerators.from_seed(inference_config.inference_seed)
+    obs_generator = ObservationGenerator(rngs)
+
+    truth_model = EnsembleModel(num_ensemble_members=1, random_generator=rngs.truth_rng)
+    truth_model.initialize()
+
+    ensemble_model = EnsembleModel(
+        num_ensemble_members=inference_config.num_ensemble_members,
+        random_generator=rngs.ensemble_rng,
+    )
+    ensemble_model.initialize()
+
+    for i in range(num_inference_steps):
+        truth_model.propagate()
+
+        truth_state = truth_model.get_state()
+        ensemble_state = ensemble_model.get_state()
+
+        obs_data = obs_generator.generate_observations_with_locations(
+            truth_state, inference_config.num_ensemble_members
+        )
+
+        assimilated_state = enkf.assimilate(
+            ensemble_state, obs_data.observation, obs_data.locations
+        )
+
+        assimilated_tensor = (
+            torch.tensor(assimilated_state, dtype=torch.float32, device=device)
+            .permute(2, 0, 1)
+            .unsqueeze(1)
+        )
+
+        with torch.no_grad():
+            corrected_tensor = model(assimilated_tensor)
+
+        corrected_state = corrected_tensor.squeeze(1).permute(1, 2, 0).cpu().numpy()
+
+        ensemble_model.assimilate(corrected_state)
+        ensemble_model.propagate()
 
 
 def compare_models():
