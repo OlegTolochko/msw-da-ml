@@ -61,7 +61,7 @@ class EnsembleModel:
             )
 
         # Final state is the unfiltered future
-        self.state = unfiltered_future[:, 1:-1]
+        self.state = unfiltered_future
         self.history.append(self.state.copy())
         return self.state
 
@@ -255,8 +255,8 @@ class ShallowWaterPhysics:
         state_ghost = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
 
         state_ghost[:, 1 : self.config.ngrid + 1] = state
-        state_ghost[:, 0] = state[:, self.config.ngrid]
-        state_ghost[:, -1] = state[:, 1]
+        state_ghost[:, 0] = state[:, self.config.ngrid-1]
+        state_ghost[:, -1] = state[:, 0]
         return state_ghost
 
 
