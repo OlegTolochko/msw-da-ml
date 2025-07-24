@@ -86,13 +86,22 @@ def inference(num_inference_steps: int, load_model_name: str = ""):
             ensemble_state, obs_data.observation, obs_data.locations
         )
 
+        observation_locations_data = np.tile(
+            np.expand_dims(obs_data.locations[:, 2:3], axis=-1),
+            (1, 1, 1, inference_config.num_ensemble_members),
+        )
+        print(assimilated_state.shape)
+        print(observation_locations_data.shape)
+        assimilated_state_with_observation_locations = np.concat(
+            [assimilated_state, observation_locations_data], axis=1
+        )
         assimilated_tensor = (
-            torch.tensor(assimilated_state, dtype=torch.float32, device=device)
+            torch.tensor(assimilated_state_with_observation_locations, dtype=torch.float32, device=device)
             .permute(2, 0, 1)
-            .unsqueeze(1)
         )
 
         with torch.no_grad():
+            print(assimilated_tensor.shape)
             corrected_tensor = model(assimilated_tensor)
 
         corrected_state = corrected_tensor.squeeze(1).permute(1, 2, 0).cpu().numpy()
@@ -107,3 +116,5 @@ def compare_models():
 
 def visualize_update_performance():
     pass
+
+inference(10, "model-20250724T154538")
