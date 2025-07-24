@@ -1,6 +1,8 @@
 import os
+
 import torch
 import numpy as np
+from typer import Typer
 
 from network import CNNModel
 from settings import load_settings
@@ -8,6 +10,8 @@ from assimilation import EnsembleKalmanFilter
 from observation_generation import ObservationGenerator
 from msw_model import EnsembleModel
 from random_manager import RandomGenerators
+
+app = Typer()
 
 settings = load_settings()
 inference_config = settings.inference_config
@@ -27,7 +31,7 @@ def get_most_recent_model_name():
             if mod_time > most_recent_time:
                 most_recent_model = model
                 most_recent_time = mod_time
-    return most_recent_model.path if most_recent_model else None
+    return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
 def load_trained_model(load_model_name: str, device):
@@ -51,6 +55,7 @@ def load_trained_model(load_model_name: str, device):
     return model
 
 
+@app.command()
 def inference(num_inference_steps: int, load_model_name: str = ""):
     device = (
         "mps"
@@ -87,21 +92,19 @@ def inference(num_inference_steps: int, load_model_name: str = ""):
         )
 
         observation_locations_data = np.tile(
-            np.expand_dims(obs_data.locations[:, 2:3], axis=-1),
-            (1, 1, 1, inference_config.num_ensemble_members),
+            np.expand_dims(obs_data.locations[2:3], axis=-1),
+            (1, 1, inference_config.num_ensemble_members),
         )
-        print(assimilated_state.shape)
-        print(observation_locations_data.shape)
         assimilated_state_with_observation_locations = np.concat(
-            [assimilated_state, observation_locations_data], axis=1
+            [assimilated_state, observation_locations_data], axis=0
         )
-        assimilated_tensor = (
-            torch.tensor(assimilated_state_with_observation_locations, dtype=torch.float32, device=device)
-            .permute(2, 0, 1)
-        )
+        assimilated_tensor = torch.tensor(
+            assimilated_state_with_observation_locations,
+            dtype=torch.float32,
+            device=device,
+        ).permute(2, 0, 1)
 
         with torch.no_grad():
-            print(assimilated_tensor.shape)
             corrected_tensor = model(assimilated_tensor)
 
         corrected_state = corrected_tensor.squeeze(1).permute(1, 2, 0).cpu().numpy()
@@ -117,4 +120,6 @@ def compare_models():
 def visualize_update_performance():
     pass
 
-inference(10, "model-20250724T154538")
+
+if __name__ == "__main__":
+    app()
