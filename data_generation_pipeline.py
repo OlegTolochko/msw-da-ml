@@ -115,7 +115,7 @@ class DataGenerationPipeline:
         obs_data = self.observation_generator.generate_observations_with_locations(
             truth_state, self.num_ensemble_members
         )
-        state.observations = obs_data.observations
+        state.observations = obs_data.observation
         state.observation_locations = obs_data.locations
         state.histories["observation_locations"].append(obs_data.locations)
         return state
