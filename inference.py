@@ -10,6 +10,8 @@ from assimilation import EnsembleKalmanFilter
 from observation_generation import ObservationGenerator
 from msw_model import EnsembleModel
 from random_manager import RandomGenerators
+from visualization import ModelComparatorVisualizer
+from data_generation_pipeline import DataGenerationPipeline
 
 app = Typer()
 
@@ -52,7 +54,7 @@ def load_trained_model(load_model_name: str, device):
     model.to(device)
     model.eval()
 
-    return model
+    return model, load_model_name
 
 
 @app.command()
@@ -62,7 +64,7 @@ def inference(num_inference_steps: int, load_model_name: str = ""):
         if torch.backends.mps.is_available()
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    model = load_trained_model(load_model_name, device)
+    model, load_model_name = load_trained_model(load_model_name, device)
 
     enkf = EnsembleKalmanFilter()
     rngs = RandomGenerators.from_seed(inference_config.inference_seed)
@@ -79,6 +81,7 @@ def inference(num_inference_steps: int, load_model_name: str = ""):
 
     for i in range(num_inference_steps):
         truth_model.propagate()
+        ensemble_model.propagate()
 
         truth_state = truth_model.get_state()
         ensemble_state = ensemble_model.get_state()
@@ -110,15 +113,39 @@ def inference(num_inference_steps: int, load_model_name: str = ""):
         corrected_state = corrected_tensor.squeeze(1).permute(1, 2, 0).cpu().numpy()
 
         ensemble_model.assimilate(corrected_state)
-        ensemble_model.propagate()
+
+    visualize_update_performance(ensemble_model, truth_model, load_model_name)
 
 
 def compare_models():
     pass
 
 
-def visualize_update_performance():
-    pass
+@app.command()
+def visualize_from_model(model_name: str = "pipeline_state.pkl"):
+    data = DataGenerationPipeline.load_pipeline_state(pipeline_state_name=model_name)
+
+    truth_model = data.models["truth"]
+    qp_model = data.models["ensemble_qp"]
+    visualize_update_performance(qp_model, truth_model, model_name)
+
+
+def visualize_update_performance(
+    cnn_model: EnsembleModel, truth_model: EnsembleModel, model_name: str
+):
+    cnn_history = cnn_model.get_history()
+    truth_history = truth_model.get_history()
+    print(len(cnn_history))
+    print(len(truth_history))
+    min_len = min(len(cnn_history), len(truth_history))
+
+    visualizer = ModelComparatorVisualizer(
+        history1=cnn_history[:min_len],
+        history2=truth_history[:min_len],
+        model1_name="CNN",
+        model2_name="Truth",
+    )
+    visualizer.animate(save_name=model_name)
 
 
 if __name__ == "__main__":
