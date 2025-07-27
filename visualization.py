@@ -36,10 +36,18 @@ class ModelComparatorVisualizer:
         self.initial_mass1 = np.sum(self.hist1[0][1].mean(axis=1))
         self.initial_mass2 = np.sum(self.hist2[0][1].mean(axis=1))
 
+        # Create figure with more bottom space
         self.fig, self.axs = plt.subplots(
-            2, 2, figsize=(16, 9), constrained_layout=True
+            2,
+            2,
+            figsize=(16, 11),
         )
         self.fig.suptitle("Model Comparison Dashboard", fontsize=16)
+
+        # Adjust subplot spacing with tighter margins
+        self.fig.subplots_adjust(
+            left=0.08, right=0.95, top=0.95, bottom=0.2, hspace=0.25, wspace=0.25
+        )
 
         # 1. state evolution
         self.ax1 = self.axs[0, 0]
@@ -83,7 +91,25 @@ class ModelComparatorVisualizer:
         self.ax4.grid(True)
         self.ax4.legend()
 
-        self.fig.subplots_adjust(bottom=0.1)
+        # small dashboard displaying rain and wind
+        self.stats_ax = self.fig.add_axes([0.05, 0.05, 0.25, 0.1])
+        self.stats_ax.set_xlim(0, 1)
+        self.stats_ax.set_ylim(0, 1)
+        self.stats_ax.axis("off")
+
+        from matplotlib.patches import Rectangle
+
+        bg_rect = Rectangle(
+            (0, 0), 1, 1, facecolor="white", edgecolor="gray", alpha=0.9, linewidth=2
+        )
+        self.stats_ax.add_patch(bg_rect)
+
+        self.stats_text1 = self.stats_ax.text(
+            0.02, 0.75, "", fontsize=10, ha="left", va="top", weight="bold"
+        )
+        self.stats_text2 = self.stats_ax.text(
+            0.02, 0.25, "", fontsize=10, ha="left", va="top", weight="bold"
+        )
 
         self._set_initial_limits()
 
@@ -153,6 +179,15 @@ class ModelComparatorVisualizer:
         self.ax4.relim()
         self.ax4.autoscale_view()
 
+        u1_mean, _, r1_mean = state1.mean(axis=(1, 2))
+        u2_mean, _, r2_mean = state2.mean(axis=(1, 2))
+
+        stats_str1 = f"{self.name1}: Mean u: {u1_mean:.3f} m/s | Mean r: {r1_mean:.4f}"
+        stats_str2 = f"{self.name2}: Mean u: {u2_mean:.3f} m/s | Mean r: {r2_mean:.4f}"
+
+        self.stats_text1.set_text(stats_str1)
+        self.stats_text2.set_text(stats_str2)
+
         return (
             self.line1,
             self.line2,
@@ -161,6 +196,8 @@ class ModelComparatorVisualizer:
             self.line_rmse,
             self.line_mass1,
             self.line_mass2,
+            self.stats_text1,
+            self.stats_text2,
         )
 
     def animate(self, save_name: str):
@@ -174,6 +211,6 @@ class ModelComparatorVisualizer:
             blit=True,
             interval=100,
         )
-        anim.save(save_path, writer="ffmpeg", fps=10, dpi=150)
+        anim.save(save_path, writer="ffmpeg", fps=5, dpi=150)
         plt.close(self.fig)
         print(f"Dashboard animation saved to {save_path}")
