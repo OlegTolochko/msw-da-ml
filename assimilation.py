@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from joblib import Parallel, delayed
 
 import numpy as np
 from settings import load_settings
@@ -147,21 +148,20 @@ class QPEnsemble(BaseAssimilation):
         mass_conservation_constraint = np.dot(
             np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_mask])
         )
-        qpens_solution = np.zeros((num_grid_points * 3, num_ensemble_members))
-        for ens_idx in range(num_ensemble_members):
-            observation_update_direction = np.dot(
-                -weighed_uncertainty.T, ens_obs_difference[:, ens_idx]
+        results = Parallel(n_jobs=-1)(
+            delayed(self.solve_one_ensemble_member)(
+                ensemble[2, :, ens_idx],
+                ens_obs_difference[:, ens_idx],
+                hessian,
+                weighed_uncertainty,
+                cov_error_sqrt,
+                rain_mask,
+                mass_conservation_constraint,
             )
-            cvxopt.solvers.options["show_progress"] = False
-            ens_solution = cvxopt.solvers.qp(
-                cvxopt.matrix(hessian),
-                cvxopt.matrix(observation_update_direction),
-                cvxopt.matrix(-cov_error_sqrt[rain_mask]),
-                cvxopt.matrix(ensemble[2, :, ens_idx]),
-                cvxopt.matrix(mass_conservation_constraint),
-                cvxopt.matrix(np.zeros((1, 1))),
-            )
-            qpens_solution[:, ens_idx] = np.asarray(ens_solution["x"]).reshape(-1)
+            for ens_idx in range(num_ensemble_members)
+        )
+
+        qpens_solution = np.stack(results, axis=1)
 
         ensemble_update_flat = np.dot(cov_error_sqrt, qpens_solution)
         u_update = ensemble_update_flat[0:num_grid_points]
@@ -171,6 +171,33 @@ class QPEnsemble(BaseAssimilation):
 
         ensemble_updated = ensemble + ensemble_update
         return ensemble_updated
+
+    @staticmethod
+    def solve_one_ensemble_member(
+        ensemble_rain_slice,
+        ens_obs_difference_slice,
+        hessian,
+        weighed_uncertainty,
+        cov_error_sqrt,
+        rain_mask,
+        mass_conservation_constraint,
+    ):
+        """
+        Solves QP problem for single ensemble member
+        """
+        observation_update_direction = np.dot(
+            -weighed_uncertainty.T, ens_obs_difference_slice
+        )
+        cvxopt.solvers.options["show_progress"] = False
+        solution = cvxopt.solvers.qp(
+            cvxopt.matrix(hessian),
+            cvxopt.matrix(observation_update_direction),
+            cvxopt.matrix(-cov_error_sqrt[rain_mask]),
+            cvxopt.matrix(ensemble_rain_slice),
+            cvxopt.matrix(mass_conservation_constraint),
+            cvxopt.matrix(np.zeros((1, 1))),
+        )
+        return np.asarray(solution["x"]).reshape(-1)
 
 
 class EnsembleKalmanFilter(BaseAssimilation):
