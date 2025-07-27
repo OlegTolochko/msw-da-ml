@@ -1,6 +1,16 @@
+import os
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np
+
+from settings import load_settings
+
+settings = load_settings()
+global_config = settings.global_config
+
+animation_path = f"{global_config.out_path}{global_config.animation_out_filename}"
+os.makedirs(animation_path, exist_ok=True)
 
 
 class ModelComparatorVisualizer:
@@ -72,6 +82,8 @@ class ModelComparatorVisualizer:
         self.ax4.set_ylabel("Error (%)")
         self.ax4.grid(True)
         self.ax4.legend()
+
+        self.fig.subplots_adjust(bottom=0.1)
 
         self._set_initial_limits()
 
@@ -151,7 +163,10 @@ class ModelComparatorVisualizer:
             self.line_mass2,
         )
 
-    def animate(self, save_path="./out/comparison_dashboard.mp4"):
+    def animate(self, save_name: str):
+        save_name = save_name.removesuffix(".pth")
+
+        save_path = f"{animation_path}{save_name}_{self.name1}_vs_{self.name2}_{len(self.hist1)}.mp4"
         anim = FuncAnimation(
             self.fig,
             self._update,
