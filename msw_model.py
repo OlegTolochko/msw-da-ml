@@ -35,6 +35,7 @@ class EnsembleModel:
         for step in range(num_init_steps):
             self.propagate()
 
+        self.history.clear()
         self.history.append(self.state.copy())
         return self.state
 
@@ -255,7 +256,7 @@ class ShallowWaterPhysics:
         state_ghost = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
 
         state_ghost[:, 1 : self.config.ngrid + 1] = state
-        state_ghost[:, 0] = state[:, self.config.ngrid-1]
+        state_ghost[:, 0] = state[:, self.config.ngrid - 1]
         state_ghost[:, -1] = state[:, 0]
         return state_ghost
 
