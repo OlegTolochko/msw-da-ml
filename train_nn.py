@@ -25,6 +25,10 @@ trained_nn_model_path = (
 )
 os.makedirs(trained_nn_model_path, exist_ok=True)
 
+normalization_out_filename = settings.global_config.normalization_out_filename
+normalization_path = f"{settings.global_config.out_path}{normalization_out_filename}"
+os.makedirs(normalization_path, exist_ok=True)
+
 
 @app.command()
 def load_generated_data(pipeline_state_name: str):
@@ -36,7 +40,7 @@ def load_generated_data(pipeline_state_name: str):
 
 
 @app.command()
-def get_train_val_loaders(pipeline_state_name: str, device: str):
+def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
@@ -85,8 +89,37 @@ def get_train_val_loaders(pipeline_state_name: str, device: str):
     kf_val_flat = kf_val_tensor.flatten(0, 1)
     qp_val_flat = qp_val_tensor.flatten(0, 1)
 
-    train_dataset = TensorDataset(kf_train_flat, qp_train_flat)
-    val_dataset = TensorDataset(kf_val_flat, qp_val_flat)
+    # cacluate means and standard deviations of utilized dataset
+    mean_in = torch.mean(kf_train_flat, dim=(0, 2), keepdim=True)
+    std_in = torch.std(kf_train_flat, dim=(0, 2), keepdim=True)
+
+    mean_out = torch.mean(qp_train_flat, dim=(0, 2), keepdim=True)
+    std_out = torch.std(qp_train_flat, dim=(0, 2), keepdim=True)
+
+    eps = 1e-8
+    std_in[std_in < eps] = 1.0
+    std_out[std_out < eps] = 1.0
+
+    stats_path = os.path.join(normalization_path, f"{model_name}.pt")
+    torch.save(
+        {
+            "mean_in": mean_in,
+            "std_in": std_in,
+            "mean_out": mean_out,
+            "std_out": std_out,
+        },
+        stats_path,
+    )
+    print(f"Saved normalization stats to {stats_path}")
+
+    # normalization
+    kf_train_norm = (kf_train_flat - mean_in) / (std_in + eps)
+    kf_val_norm = (kf_val_flat - mean_in) / (std_in + eps)
+    qp_train_norm = (qp_train_flat - mean_out) / (std_out + eps)
+    qp_val_norm = (qp_val_flat - mean_out) / (std_out + eps)
+
+    train_dataset = TensorDataset(kf_train_norm, qp_train_norm)
+    val_dataset = TensorDataset(kf_val_norm, qp_val_norm)
 
     train_loader = DataLoader(
         train_dataset, batch_size=training_config.batch_size, shuffle=True
@@ -115,9 +148,16 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
 
+    model_name = f"{training_config.model_save_name}"
+    if include_timestamp_in_name:
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        model_name += f"-{timestamp}"
+
     model = CNNModel()
     model = model.to(device)
-    train_lodar, val_loader = get_train_val_loaders(pipeline_state_name, device)
+    train_lodar, val_loader = get_train_val_loaders(
+        pipeline_state_name, device, model_name
+    )
 
     criterion = RMSEBiasLoss()
     optimizer = torch.optim.Adam(
@@ -158,11 +198,6 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
         process_bar.set_postfix(
             {"Train Loss": f"{avg_loss_train:.4f}", "Val Loss": f"{avg_loss_val:.4f}"}
         )
-
-    model_name = f"{training_config.model_save_name}"
-    if include_timestamp_in_name:
-        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        model_name += f"-{timestamp}"
 
     model_name += ".pth"
     model_save_path = os.path.join(trained_nn_model_path, model_name)
