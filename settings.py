@@ -77,6 +77,7 @@ class GlobalConfig(BaseModel):
     animation_out_filename: str
     msw_model_out_filename: str
     trained_nn_model_out_filename: str
+    normalization_out_filename: str
     base_seed: int
 
 

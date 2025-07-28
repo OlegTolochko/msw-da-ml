@@ -68,4 +68,5 @@ global_config:
   animation_out_filename: animation/
   msw_model_out_filename: msw_models/
   trained_nn_model_out_filename: trained_nn_models/
+  normalization_out_filename: normalization_stats/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs
