@@ -32,7 +32,7 @@ class WaterModelConfig(BaseModel):
     wind_perturbation_noise_amplitude: float
 
 
-class ObservationGenerationConfig(BaseModel):
+class SharedObsGenAssimilationConfig(BaseModel):
     u_error_std: float
     u_error_mean: float
     h_error_std: float
@@ -44,15 +44,6 @@ class ObservationGenerationConfig(BaseModel):
     radar_no_rain_observation_percentage: float
     cov_inflation: float
     grid_point_influence: int
-
-
-class TrainingConfig(BaseModel):
-    val_split_size: float
-    random_state_train_test_split: int
-    batch_size: int
-    learning_rate: float
-    epochs: int
-    model_save_name: str
 
 
 class NetworkConfig(BaseModel):
@@ -67,20 +58,36 @@ class LossConfig(BaseModel):
     bias_loss_weight: int
 
 
+class TrainingConfig(BaseModel):
+    val_split_size: float
+    random_state_train_test_split: int
+    batch_size: int
+    learning_rate: float
+    epochs: int
+    model_save_name: str
+
+
+class InferenceConfig(BaseModel):
+    inference_seed: int
+    num_ensemble_members: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
     msw_model_out_filename: str
     trained_nn_model_out_filename: str
+    normalization_out_filename: str
     base_seed: int
 
 
 class AppSettings(BaseModel):
     water_model_config: WaterModelConfig
-    observation_generation_config: ObservationGenerationConfig
-    training_config: TrainingConfig
+    shared_obs_gen_assimilation_config: SharedObsGenAssimilationConfig
     network_config: NetworkConfig
     loss_config: LossConfig
+    training_config: TrainingConfig
+    inference_config: InferenceConfig
     global_config: GlobalConfig
 
 

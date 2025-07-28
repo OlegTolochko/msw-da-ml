@@ -1,31 +1,28 @@
 import numpy as np
-from numpy.random import PCG64
-from settings import load_settings
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
+from settings import load_settings
 
-class ModifiedShallowWaterModel:
+
+class EnsembleModel:
     def __init__(
         self, num_ensemble_members: int, random_generator: np.random.Generator
     ):
         """Implementation of the shallow water model"""
         self.num_ensemble_members = num_ensemble_members
         self.random_generator = random_generator
-
         settings = load_settings()
-        config = settings.water_model_config
-        self.settings = settings
-        self.config = config
-        self.gaussian_wind_perturbation = self.generate_gaussian_noise()
+        self.config = settings.water_model_config
 
-        self.current_state = None
-        self.nsub_state_history = []
+        self.physics_engine = ShallowWaterPhysics(self.config, num_ensemble_members)
+        self.gaussian_wind_perturbation = self._generate_gaussian_noise()
 
-    def initialize(
-        self, num_init_steps: int = 8, exclude_from_state_history: bool = True
-    ):
-        """initializes the initial shallow water model"""
+        self.state = None
+        self.history = []
+
+    def initialize(self, num_init_steps: int = 8):
+        """initializes the initial ensemble state"""
         u = np.zeros((self.config.ngrid, self.num_ensemble_members))
         h = np.zeros((self.config.ngrid, self.num_ensemble_members))
         r = np.zeros((self.config.ngrid, self.num_ensemble_members))
@@ -33,57 +30,125 @@ class ModifiedShallowWaterModel:
         u = u + self.config.base_velocity
         h = h + self.config.base_height
         r = r + self.config.base_rain
-        init_state = np.array([u, h, r])
+        self.state = np.array([u, h, r])
 
         for step in range(num_init_steps):
-            init_state = self.apply_nsub_steps(state=init_state)
+            self.propagate()
 
-        if exclude_from_state_history:
-            self.nsub_state_history = [self.nsub_state_history[-1]]
+        self.history.clear()
+        self.history.append(self.state.copy())
+        return self.state
 
-        return init_state
+    def assimilate(self, new_state: np.ndarray):
+        """Updates the models current state with an assimilated state."""
+        if self.state.shape != new_state.shape:
+            raise ValueError("Shape of new state does not match current state.")
 
-    def msw_step(
+        self.state = new_state
+        if self.history:
+            self.history[-1] = self.state.copy()
+        else:
+            raise ValueError("The current class instance has no history to correct.")
+
+    def propagate(self):
+        """Propagates the model state forward by nsub_steps"""
+        past = self.state.copy()
+        present = self.state.copy()
+
+        for step in range(self.config.num_sub_steps):
+            wind_perturbation = self._generate_wind_perturbation()
+            past, present, unfiltered_future = self.physics_engine.step(
+                past, present, wind_perturbation
+            )
+
+        # Final state is the unfiltered future
+        self.state = unfiltered_future
+        self.history.append(self.state.copy())
+        return self.state
+
+    def _generate_wind_perturbation(self):
+        """generate random wind perturbation"""
+        wind_perturbation = np.zeros((2 * self.config.ngrid, self.num_ensemble_members))
+        gaussian_noise = self.gaussian_wind_perturbation
+        for i in range(self.num_ensemble_members):
+            pos = self.random_generator.integers(0, self.config.ngrid - 1)
+            wind_perturbation[pos : pos + self.config.ngrid, i] = (
+                wind_perturbation[pos : pos + self.config.ngrid, i] + gaussian_noise
+            )
+
+        return (
+            wind_perturbation[0 : self.config.ngrid]
+            + wind_perturbation[
+                self.config.ngrid : self.config.ngrid + self.config.ngrid
+            ]
+        )
+
+    def _generate_gaussian_noise(self):
+        noise_center = float((self.config.ngrid + 1) / 2)
+        x_axis = np.array(range(self.config.ngrid + 1))
+        std = float(
+            self.config.wind_perturbation_standard_deviation
+        )  # Standard deviation for gaussian, width of perturbation
+        amp = float(
+            self.config.wind_perturbation_noise_amplitude
+        )  # Amplitude of the added noise field (in m/s)
+        gaussian = (1 / (std * np.sqrt(2.0 * np.pi))) * np.exp(
+            -0.5 * ((x_axis - noise_center) / std) ** 2
+        )
+        perturbation = (
+            gaussian[1 : self.config.ngrid + 1] - gaussian[0 : self.config.ngrid]
+        )  # derivative of gaussian
+        perturbation_normalized = amp * perturbation / max(perturbation)
+
+        return perturbation_normalized
+
+    def get_state(self):
+        return self.state
+
+    def get_history(self):
+        return self.history
+
+
+class ShallowWaterPhysics:
+    def __init__(self, config, num_ensemble_members: int):
+        self.config = config
+        self.num_ensemble_members = num_ensemble_members
+
+    def step(
         self,
         state_past: np.ndarray,
         state_present: np.ndarray,
-        state_future: np.ndarray,
-        phi: np.ndarray,
         wind_perturbation: np.ndarray,
     ):
         """
         Applies a single state evolution update step using the leapfrog method.
-        Assumption: all input arrays already include ghost cells.
 
         Args:
             state_past: The model state at time (t - dt),
                         Shape: (3, num_grid_cells + 2, num_ensemble_members)
             state_present: The model state at time (t),
                         Shape: (3, num_grid_cells + 2, num_ensemble_members)
-            state_future: The model state to be predicted at time (t + dt),
-                        Shape: (3, num_grid_cells + 2, num_ensemble_members)
-            phi: The potential that largely controls the wind,
-                        Shape: (num_grid_cells + 2, num_ensemble_members)
             wind_perturbation: Noise to be applied to the wind field,
                         Shape: (num_grid_cells, num_ensemble_members)
 
         Returns:
-            A numpy array containing the new model state at time (t + dt),
-            Shape: (3, num_grid_cells + 2, num_ensemble_members)
+            past, present and future states,
+            Shape: (3, num_grid_cells, num_ensemble_members)
         """
+        # Add ghost cells
+        state_past = self.add_ghost_cells(state_past)
+        state_present = self.add_ghost_cells(state_present)
 
         # Update ghost cells
-        state_past[:, 0] = state_past[:, self.config.ngrid]
-        state_present[:, 0] = state_present[:, self.config.ngrid]
-        state_future[:, 0] = state_future[:, self.config.ngrid]
-        state_past[:, self.config.ngrid + 1] = state_past[:, 1]
-        state_present[:, self.config.ngrid + 1] = state_present[:, 1]
-        state_future[:, self.config.ngrid + 1] = state_future[:, 1]
+        state_future = np.zeros_like(state_present)
 
         u_past, h_past, r_past = state_past
         u_pr, h_pr, r_pr = state_present
 
         u_pr[1 : self.config.ngrid + 1] += wind_perturbation
+
+        # Potential that largely controls the wind
+        phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
 
         # trigger convection, if height surpasses height threshold h_cloud
         phi[1 : self.config.ngrid + 1] = np.where(
@@ -181,139 +246,23 @@ class ModifiedShallowWaterModel:
             state_future + self.config.filter_correction_present * second_derivative
         )
 
-        return next_state_past, next_state_present, state_future
-
-    def apply_nsub_steps(self, state: np.ndarray = None):
-        """Applies nsub shallow water model steps to a given state
-        Args:
-            state: the previous water shallow model state,
-                        Shape: (3, num_grid_cells, num_ensemble_members)
-
-        Returns:
-            updated_state: Updated state after nsub steps
-        """
-        if state is None:
-            state = self.current_state
-
-        # num_grid_cells+2 to allow for derivatives to be computed for the first and last cell
-        past_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-        present_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-        future_state = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
-
-        # prepare state for leapfrog method by introducing a past, present and future dimension
-        past_state[:, 1 : self.config.ngrid + 1] = state
-        present_state[:, 1 : self.config.ngrid + 1] = state
-        future_state[:, 1 : self.config.ngrid + 1] = state
-
-        phi = np.zeros((self.config.ngrid + 2, self.num_ensemble_members))
-
-        self.current_state = present_state[:, 1 : self.config.ngrid + 1]
-
-        for step in range(self.config.num_sub_steps):
-            wind_perturbation = self.generate_wind_perturbation()
-            past_state, present_state, future_state = self.msw_step(
-                past_state, present_state, future_state, phi, wind_perturbation
-            )
-
-        self.nsub_state_history.append(
-            future_state[:, 1 : self.config.ngrid + 1].copy()
-        )
-        self.current_state = future_state[:, 1 : self.config.ngrid + 1]
-        return future_state[:, 1 : self.config.ngrid + 1]
-
-    def generate_wind_perturbation(self):
-        """generate random wind perturbation"""
-        wind_perturbation = np.zeros((2 * self.config.ngrid, self.num_ensemble_members))
-        gaussian_noise = self.gaussian_wind_perturbation
-        for i in range(self.num_ensemble_members):
-            pos = self.random_generator.integers(0, self.config.ngrid - 1)
-            wind_perturbation[pos : pos + self.config.ngrid, i] = (
-                wind_perturbation[pos : pos + self.config.ngrid, i] + gaussian_noise
-            )
-
         return (
-            wind_perturbation[0 : self.config.ngrid]
-            + wind_perturbation[
-                self.config.ngrid : self.config.ngrid + self.config.ngrid
-            ]
+            next_state_past[:, 1:-1],
+            next_state_present[:, 1:-1],
+            state_future[:, 1:-1],
         )
 
-    def generate_gaussian_noise(self):
-        noise_center = float((self.config.ngrid + 1) / 2)
-        x_axis = np.array(range(self.config.ngrid + 1))
-        std = float(
-            self.config.wind_perturbation_standard_deviation
-        )  # Standard deviation for gaussian, width of perturbation
-        amp = float(
-            self.config.wind_perturbation_noise_amplitude
-        )  # Amplitude of the added noise field (in m/s)
-        gaussian = (1 / (std * np.sqrt(2.0 * np.pi))) * np.exp(
-            -0.5 * ((x_axis - noise_center) / std) ** 2
-        )
-        perturbation = (
-            gaussian[1 : self.config.ngrid + 1] - gaussian[0 : self.config.ngrid]
-        )  # derivative of gaussian
-        perturbation_normalized = amp * perturbation / max(perturbation)
+    def add_ghost_cells(self, state):
+        state_ghost = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))
 
-        return perturbation_normalized
-
-    def get_current_state(self):
-        return self.current_state
-
-    def get_nsub_state_history(self):
-        return self.nsub_state_history
-
-    def update_current_state(self, new_state):
-        if (
-            self.current_state is not None
-            and self.current_state.shape != new_state.shape
-        ):
-            raise Exception(
-                f"Trying to update model with state shapes of {self.current_state.shape}, with a state of shape {new_state.shape}"
-            )
-        self.current_state = new_state
-
-    def save_current_model_state(self, save_directory="./out/"):
-        """saves model state as .npy (.npz) file"""
-        random_state = self.random_generator.bit_generator.state
-        nsub_steps = len(self.nsub_state_history)
-        base_seed = self.settings.global_config.base_seed
-        model_state_name = (
-            f"msw_model_ens{self.num_ensemble_members}_{base_seed}_{nsub_steps}.npz"
-        )
-        full_save_path = f"{save_directory}{model_state_name}"
-        np.savez(
-            full_save_path,
-            current_state=self.current_state,
-            nsub_state_history=self.nsub_state_history,
-            num_ensemble_members=self.num_ensemble_members,
-            random_state=random_state,
-        )
-
-    @classmethod
-    def from_state_history(cls, load_path):
-        """loads model state from .npz file"""
-        with np.load(load_path, allow_pickle=True) as data:
-            current_state = data["current_state"]
-            nsub_state_history = data["nsub_state_history"]
-            num_ensemble_members = int(data["num_ensemble_members"])
-            random_state = data["random_state"].item()
-
-        bit_gen = PCG64()
-        bit_gen.state = random_state
-        random_generator = np.random.Generator(bit_gen)
-
-        model = cls(
-            num_ensemble_members=num_ensemble_members, random_generator=random_generator
-        )
-        model.current_state = current_state
-        model.nsub_state_history = nsub_state_history
-
-        return model
+        state_ghost[:, 1 : self.config.ngrid + 1] = state
+        state_ghost[:, 0] = state[:, self.config.ngrid - 1]
+        state_ghost[:, -1] = state[:, 0]
+        return state_ghost
 
 
 def animate_evolution_from_history(
-    state_history, save_path="./out/model_evolution.mp4"
+    state_history: list, save_path: str = "./out/model_evolution.mp4"
 ):
     ngrid = state_history[0].shape[1]
     fig, ax = plt.subplots(figsize=(10, 6))

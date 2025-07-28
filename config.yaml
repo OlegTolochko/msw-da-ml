@@ -28,7 +28,7 @@ water_model_config:
   wind_perturbation_standard_deviation: 4
   wind_perturbation_noise_amplitude: 0.002
 
-observation_generation_config:
+shared_obs_gen_assimilation_config:
   u_error_std: 0.001
   u_error_mean: 0.0
   h_error_std: 0.01
@@ -41,14 +41,6 @@ observation_generation_config:
   cov_inflation: 1.0
   grid_point_influence: 4 # number surrounding grid points to be influenced from outgoing grid point
 
-training_config:
-  val_split_size: 0.2
-  random_state_train_test_split: 42
-  batch_size: 32
-  learning_rate: 0.001
-  epochs: 100
-  model_save_name: model
-
 network_config:
   in_channels: 4
   hidden_channels: 32
@@ -59,9 +51,22 @@ loss_config:
   variable_to_punish_idx: 1 # Variable for bias loss, Default: 1; Options: 0: velocity, 1: height, 2: rain
   bias_loss_weight: 1 # Weighting for bias loss
 
+training_config:
+  val_split_size: 0.2
+  random_state_train_test_split: 42
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
+  model_save_name: model
+
+inference_config:
+  inference_seed: 43 # difference seed, to ensure different setting
+  num_ensemble_members: 10
+
 global_config:
   out_path: ./out/
   animation_out_filename: animation/
   msw_model_out_filename: msw_models/
   trained_nn_model_out_filename: trained_nn_models/
+  normalization_out_filename: normalization_stats/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

@@ -8,13 +8,9 @@ from pathlib import Path
 
 import tqdm
 
-from msw_model import ModifiedShallowWaterModel, animate_evolution_from_history
-from assimilation import (
-    generate_observation,
-    generate_radar_masks,
-    kf_assimilate,
-    qpens_assimilate,
-)
+from msw_model import EnsembleModel, animate_evolution_from_history
+from assimilation import EnsembleKalmanFilter, QPEnsemble
+from observation_generation import ObservationGenerator
 from settings import load_settings
 
 settings = load_settings()
@@ -34,6 +30,9 @@ class DataGenerationPipeline:
     def __init__(self, num_ensemble_members: int, rngs):
         self.num_ensemble_members = num_ensemble_members
         self.rngs = rngs
+        self.observation_generator = ObservationGenerator(rngs)
+        self.kf_assimilator = EnsembleKalmanFilter()
+        self.qp_assimilator = QPEnsemble()
 
     def run(
         self,
@@ -42,10 +41,10 @@ class DataGenerationPipeline:
         save_data: bool = True,
         pipeline_state_save_name: str = "pipeline_state",
     ):
-        model_truth = ModifiedShallowWaterModel(
+        model_truth = EnsembleModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
         )
-        model_ensemble = ModifiedShallowWaterModel(
+        model_ensemble = EnsembleModel(
             num_ensemble_members=self.num_ensemble_members,
             random_generator=self.rngs.ensemble_rng,
         )
@@ -106,36 +105,32 @@ class DataGenerationPipeline:
     def _forecast_truth(self, state: DataGenerationState):
         """Step 1: Truth model step"""
         if state.iteration > 0:
-            state.models["truth"].apply_nsub_steps()
+            state.models["truth"].propagate()
         return state
 
     def _generate_observations(self, state: DataGenerationState):
         """Step 2: Observation generation from truth"""
-        truth_state = state.models["truth"].get_current_state()
+        truth_state = state.models["truth"].get_state()
 
-        state.observations = generate_observation(
-            truth_state=truth_state,
-            num_ensemble_members=self.num_ensemble_members,
-            random_generator=self.rngs.obs_rng,
+        obs_data = self.observation_generator.generate_observations_with_locations(
+            truth_state, self.num_ensemble_members
         )
-        observation_locations = generate_radar_masks(
-            state_truth=truth_state, random_generator=self.rngs.radar_rng
-        )
-        state.observation_locations = observation_locations
-        state.histories["observation_locations"].append(observation_locations)
+        state.observations = obs_data.observation
+        state.observation_locations = obs_data.locations
+        state.histories["observation_locations"].append(obs_data.locations)
         return state
 
     def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
-        ensemble_state_kf = state.models["ensemble_kf"].get_current_state()
-        ensemble_state_qp = state.models["ensemble_qp"].get_current_state()
+        ensemble_state_kf = state.models["ensemble_kf"].get_state()
+        ensemble_state_qp = state.models["ensemble_qp"].get_state()
 
-        kf_assimilated = kf_assimilate(
+        kf_assimilated = self.kf_assimilator.assimilate(
             ensemble=ensemble_state_kf,
             observation=state.observations,
             observation_position=state.observation_locations,
         )
-        qp_assimilated = qpens_assimilate(
+        qp_assimilated = self.qp_assimilator.assimilate(
             ensemble=ensemble_state_qp,
             observation=state.observations,
             observation_position=state.observation_locations,
@@ -144,8 +139,10 @@ class DataGenerationPipeline:
         state.histories["kf"].append(kf_assimilated)
         state.histories["qp"].append(qp_assimilated)
 
-        state.models["ensemble_kf"].apply_nsub_steps(kf_assimilated)
-        state.models["ensemble_qp"].apply_nsub_steps(qp_assimilated)
+        state.models["ensemble_kf"].assimilate(kf_assimilated)
+        state.models["ensemble_kf"].propagate()
+        state.models["ensemble_qp"].assimilate(qp_assimilated)
+        state.models["ensemble_qp"].propagate()
 
         return state
 
@@ -157,5 +154,5 @@ class DataGenerationPipeline:
         animate_evolution_from_history(
             state.histories["qp"], "./out/model_evolution_qp.mp4"
         )
-        state_history_truth = state.models["truth"].get_nsub_state_history()
+        state_history_truth = state.models["truth"].get_history()
         animate_evolution_from_history(state_history_truth)
