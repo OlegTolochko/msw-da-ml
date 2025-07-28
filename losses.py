@@ -20,12 +20,12 @@ class RMSEBiasLoss(nn.Module):
         )
 
         # Bias Loss, punishes incorrect totals for a specified variable index
-        y_true_variable_mean = torch.mean(
-            y_true[:, loss_config.variable_to_punish_idx], dim=1
-        )
-        y_pred_variable_mean = torch.mean(
-            y_pred[:, loss_config.variable_to_punish_idx], dim=1
-        )
+        y_true_variable_mean = torch.mean(y_true, dim=2)[
+            :, loss_config.variable_to_punish_idx
+        ]
+        y_pred_variable_mean = torch.mean(y_pred, dim=2)[
+            :, loss_config.variable_to_punish_idx
+        ]
         bias_loss = torch.mean(
             torch.sqrt(torch.square(y_true_variable_mean - y_pred_variable_mean))
         )
