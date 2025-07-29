@@ -72,12 +72,20 @@ class InferenceConfig(BaseModel):
     num_ensemble_members: int
 
 
+class ExperimentConfig(BaseModel):
+    base_seed: int
+    num_seeds: int
+    num_inference_steps: int
+    num_ensemble_members: int
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
     msw_model_out_filename: str
     trained_nn_model_out_filename: str
     normalization_out_filename: str
+    experiment_histories_out_filename: str
     base_seed: int
 
 
@@ -88,6 +96,7 @@ class AppSettings(BaseModel):
     loss_config: LossConfig
     training_config: TrainingConfig
     inference_config: InferenceConfig
+    experiment_config: ExperimentConfig
     global_config: GlobalConfig
 
 

@@ -63,10 +63,17 @@ inference_config:
   inference_seed: 43 # difference seed, to ensure different setting
   num_ensemble_members: 10
 
+experiment_config:
+  base_seed: 43
+  num_seeds: 10
+  num_inference_steps: 200
+  num_ensemble_members: 10
+
 global_config:
   out_path: ./out/
   animation_out_filename: animation/
   msw_model_out_filename: msw_models/
   trained_nn_model_out_filename: trained_nn_models/
   normalization_out_filename: normalization_stats/
+  experiment_histories_out_filename: experiment_histories/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs
