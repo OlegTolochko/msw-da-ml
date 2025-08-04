@@ -146,7 +146,7 @@ class QPEnsemble(BaseAssimilation):
         height_mask = np.arange(num_grid_points, num_grid_points * 2)
 
         mass_conservation_constraint = np.dot(
-            np.ones(num_grid_points), np.asmatrix(eigen_vectors[height_mask])
+            np.ones(num_grid_points), np.asmatrix(cov_error_sqrt[height_mask])
         )
         results = Parallel(n_jobs=-1)(
             delayed(self.solve_one_ensemble_member)(
