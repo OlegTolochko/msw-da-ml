@@ -85,7 +85,6 @@ class ConformalPredictionConfig(BaseModel):
     calibration_quantile: float
 
 
-
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
