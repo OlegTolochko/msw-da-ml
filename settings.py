@@ -79,6 +79,13 @@ class ExperimentConfig(BaseModel):
     num_ensemble_members: int
 
 
+class ConformalPredictionConfig(BaseModel):
+    calibration_split_ratio: float
+    calibration_split_seed: int
+    calibration_quantile: float
+
+
+
 class GlobalConfig(BaseModel):
     out_path: str
     animation_out_filename: str
@@ -97,6 +104,7 @@ class AppSettings(BaseModel):
     training_config: TrainingConfig
     inference_config: InferenceConfig
     experiment_config: ExperimentConfig
+    conformal_prediction_config: ConformalPredictionConfig
     global_config: GlobalConfig
 
 

@@ -64,10 +64,15 @@ inference_config:
   num_ensemble_members: 10
 
 experiment_config:
-  base_seed: 43
-  num_seeds: 10
+  base_seed: 143
+  num_seeds: 100
   num_inference_steps: 200
   num_ensemble_members: 10
+
+conformal_prediction_config:
+  calibration_split_ratio: 0.5 # percentage of samples/random seeds to be utilized in calibration
+  calibration_split_seed: 42
+  calibration_quantile: 0.9 # calibration quantile, theoretical guarantee
 
 global_config:
   out_path: ./out/
