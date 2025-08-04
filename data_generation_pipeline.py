@@ -122,8 +122,8 @@ class DataGenerationPipeline:
 
     def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
-        ensemble_state_kf = state.models["ensemble_kf"].get_state()
-        ensemble_state_qp = state.models["ensemble_qp"].get_state()
+        ensemble_state_kf = state.models["ensemble_qp"].get_state().copy()
+        ensemble_state_qp = state.models["ensemble_qp"].get_state().copy()
 
         kf_assimilated = self.kf_assimilator.assimilate(
             ensemble=ensemble_state_kf,
