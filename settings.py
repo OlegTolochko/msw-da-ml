@@ -83,6 +83,7 @@ class ConformalPredictionConfig(BaseModel):
     calibration_split_ratio: float
     calibration_split_seed: int
     calibration_quantile: float
+    rain_normalization_eps: float
 
 
 class GlobalConfig(BaseModel):
