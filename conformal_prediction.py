@@ -3,6 +3,7 @@ from sklearn.model_selection import train_test_split
 from typer import Typer
 from settings import load_settings
 import matplotlib.pyplot as plt
+import os
 
 from test_pipeline import load_histories, ExperimentHistory
 from settings import load_settings
@@ -11,6 +12,10 @@ app = Typer()
 
 settings = load_settings()
 config = settings.conformal_prediction_config
+global_config = settings.global_config
+
+viz_dir = f"{global_config.out_path}{global_config.visualizations_out_filename}"
+os.makedirs(viz_dir, exist_ok=True)
 
 
 @app.command()
@@ -42,6 +47,7 @@ def conformal_prediction(hist_name: str, normalize: bool = False):
             print(f"{var_name} min std: {np.min(cnn_std[:,:,i])}")
             print(f"{var_name} max std: {np.max(cnn_std[:,:,i])}")
 
+    # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
     quantiles = calibrate(truth_calib=qpens_calib, cnn_calib=cnn_calib, normalization_term=normalization_term)
     cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
 
@@ -58,9 +64,9 @@ def conformal_prediction(hist_name: str, normalize: bool = False):
     )
 
     quantiles = np.mean(quantiles_expanded, axis=(0,-1))
-    visualize_coverage(coverage)
-    visualize_quantile_intervals(quantiles)
-    visualize_coverage_gridpoints(upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test)
+    visualize_coverage(coverage, hist_name)
+    visualize_quantile_intervals(quantiles, hist_name)
+    visualize_coverage_gridpoints(upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, hist_name)
 
 
 def check_coverage(
@@ -98,7 +104,7 @@ def calibrate(truth_calib: np.ndarray, cnn_calib: np.ndarray, normalization_term
     return quantiles
 
 
-def visualize_coverage(coverage: np.ndarray):
+def visualize_coverage(coverage: np.ndarray, hist_name: str):
     # shape (num_seeds, num_timesteps, 3, 250) -> (num_timesteps, 3)
     coverage_gridpoint_mean = np.mean(coverage, axis=-1)
     coverage_seed_gridpoint_mean = np.mean(coverage_gridpoint_mean, axis=(0))
@@ -125,10 +131,14 @@ def visualize_coverage(coverage: np.ndarray):
         ax.set_ylim(np.min(coverage_seed_gridpoint_mean-coverage_seed_gridpoint_std)*0.9, 1)
     
     plt.tight_layout()
-    plt.show()
+    
+    base_name = hist_name.replace('.npz', '')
+    save_path = f"{viz_dir}{base_name}_conformal_coverage.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Coverage visualization saved to: {save_path}")
 
 
-def visualize_quantile_intervals(quantiles: np.ndarray):
+def visualize_quantile_intervals(quantiles: np.ndarray, hist_name: str):
     interval_length = 2*quantiles
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -146,10 +156,17 @@ def visualize_quantile_intervals(quantiles: np.ndarray):
         ax.set_ylim(np.min(interval_length)*0.95, np.max(interval_length)*1.05)
     
     plt.tight_layout()
-    plt.show()
+    
+    base_name = hist_name.replace('.npz', '')
+    save_path = f"{viz_dir}{base_name}_conformal_intervals.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Interval visualization saved to: {save_path}")
 
 
-def visualize_coverage_gridpoints(upper_interval, lower_interval, truth, qpens, cnn, random_seed: int = 10, timestep: int = 50):
+def visualize_coverage_gridpoints(upper_interval, lower_interval, truth, qpens, cnn, hist_name: str, random_seed: int = 10, timestep: int = 50):
+    '''
+    Visualizes coverage performance for a set random seed and timestamp
+    '''
     print(upper_interval.shape)
     print(lower_interval.shape)
     
@@ -163,7 +180,7 @@ def visualize_coverage_gridpoints(upper_interval, lower_interval, truth, qpens, 
     qpens_seed_timestep = qpens_ens_mean[random_seed, timestep]
     cnn_seed_timestep = cnn_ens_mean[random_seed, timestep]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axes = plt.subplots(3, 1, figsize=(15, 15))
     variable_names = ['Velocity (u)', 'Height (h)', 'Rain (r)']
     
     for i, (ax, var_name) in enumerate(zip(axes, variable_names)):
@@ -174,19 +191,32 @@ def visualize_coverage_gridpoints(upper_interval, lower_interval, truth, qpens, 
                        upper_interval_seed_timestep[i, :], 
                        facecolor='lightblue', alpha=0.5, label='Confidence Interval')
         
-        ax.plot(gridpoints, truth_seed_timestep[i, :], 'g-', linewidth=2, label='Truth', alpha=0.75)
-        ax.plot(gridpoints, qpens_seed_timestep[i, :], 'b-', linewidth=2, label='QPens', alpha=0.75)
-        ax.plot(gridpoints, cnn_seed_timestep[i, :], 'r-', linewidth=2, label='CNN', alpha=0.75)
+        ax.plot(gridpoints, truth_seed_timestep[i, :], 'go-', markersize=2, linewidth=1.5, 
+               label='Truth', alpha=0.5, markerfacecolor='white', markeredgewidth=0.75)
         
+        ax.plot(gridpoints, qpens_seed_timestep[i, :], 'bs-', markersize=2, linewidth=1.5, 
+               label='QPens', alpha=0.5, markerfacecolor='white', markeredgewidth=0.75)
+        
+        ax.plot(gridpoints, cnn_seed_timestep[i, :], 'r^-', markersize=2, linewidth=1.5, 
+               label='CNN', alpha=0.5, markerfacecolor='white', markeredgewidth=0.75)
+               
         ax.set_xlabel('Grid Point')
         ax.set_ylabel(var_name)
         ax.set_title(f'{var_name} at Seed {random_seed}, Timestep {timestep}')
         ax.legend()
         ax.grid(True, alpha=0.3)
+
+        y_range = ax.get_ylim()
+        y_padding = (y_range[1] - y_range[0]) * 0.1
+        ax.set_ylim(y_range[0] - y_padding, y_range[1] + y_padding)
     
     plt.tight_layout()
-    plt.show()
+    
+    base_name = hist_name.replace('.npz', '')
+    save_path = f"{viz_dir}{base_name}_conformal_gridpoints_seed{random_seed}_t{timestep}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Gridpoint visualization saved to: {save_path}")
 
 
 if __name__ == "__main__":
-    conformal_prediction("model-20250729T162836_93_50.npz")
+    conformal_prediction("model-20250729T162836_143_100.npz")
