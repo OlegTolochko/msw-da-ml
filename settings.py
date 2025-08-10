@@ -87,7 +87,7 @@ class ConformalPredictionConfig(BaseModel):
 
 class GlobalConfig(BaseModel):
     out_path: str
-    animation_out_filename: str
+    visualizations_out_filename: str
     msw_model_out_filename: str
     trained_nn_model_out_filename: str
     normalization_out_filename: str

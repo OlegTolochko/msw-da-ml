@@ -9,7 +9,7 @@ from settings import load_settings
 settings = load_settings()
 global_config = settings.global_config
 
-animation_path = f"{global_config.out_path}{global_config.animation_out_filename}"
+animation_path = f"{global_config.out_path}{global_config.visualizations_out_filename}"
 os.makedirs(animation_path, exist_ok=True)
 
 
