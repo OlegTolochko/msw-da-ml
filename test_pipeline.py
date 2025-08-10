@@ -2,6 +2,7 @@ import os
 import copy
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
+import datetime
 
 import torch
 import numpy as np
@@ -180,9 +181,9 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistory], st
 
 def save_histories(
     histories: List[ExperimentHistory],
-    model_name: str,
 ):
-    save_name = f"{model_name.removesuffix('.pth')}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    save_name = f"hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = f"{experiments_path}{save_name}"
     save_data = {}
 
@@ -369,8 +370,9 @@ def uhr_rmse_comparison(histories: List[ExperimentHistory]):
         an_ax.set_ylim(y_min, y_max)
 
     plt.tight_layout()
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     plt.savefig(
-        f"{global_config.out_path}{global_config.animation_out_filename}/rmse_comparison.png",
+        f"{global_config.out_path}{global_config.visualizations_out_filename}/{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}_rmse_comparison.png",
         dpi=300,
         bbox_inches="tight",
     )
