@@ -73,7 +73,7 @@ conformal_prediction_config:
   calibration_split_ratio: 0.5 # percentage of samples/random seeds to be utilized in calibration
   calibration_split_seed: 42
   calibration_quantile: 0.9 # calibration quantile, theoretical guarantee
-  rain_normalization_eps: 1e-3 # epsilon to be added to rain during normalization
+  rain_normalization_eps: 1.0 # epsilon to be added to rain during normalization
 
 global_config:
   out_path: ./out/

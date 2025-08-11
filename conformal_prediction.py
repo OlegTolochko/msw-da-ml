@@ -291,4 +291,4 @@ def visualize_coverage_gridpoints(
 
 
 if __name__ == "__main__":
-    conformal_prediction("model-20250729T162836_143_100.npz")
+    app()
