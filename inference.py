@@ -5,14 +5,14 @@ import torch
 import numpy as np
 from typer import Typer
 
-from network import CNNModel
-from settings import load_settings
-from assimilation import EnsembleKalmanFilter, QPEnsemble
-from observation_generation import ObservationGenerator
-from msw_model import EnsembleModel
-from random_manager import RandomGenerators
-from visualization import ModelComparatorVisualizer
-from data_generation_pipeline import DataGenerationPipeline
+from models.network import CNNModel
+from core.settings import load_settings
+from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
+from data.observation_generation import ObservationGenerator
+from models.msw_model import EnsembleModel
+from core.random_manager import RandomGenerators
+from analysis.msw_model_visualization import ModelComparatorVisualizer
+from data.msw_data_generation import DataGenerationPipeline
 
 app = Typer()
 

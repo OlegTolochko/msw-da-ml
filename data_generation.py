@@ -2,9 +2,10 @@ import os
 
 from typer import Typer
 
-from random_manager import RandomGenerators
-from settings import load_settings
-from data_generation_pipeline import DataGenerationPipeline
+from core.random_manager import RandomGenerators
+from core.settings import load_settings
+from data.msw_data_generation_pipeline import DataGenerationPipeline
+from data.experiment_data_generation import generate_experiment_data
 
 
 app = Typer()
@@ -22,6 +23,11 @@ def generate_training_data(
         num_ensemble_members=num_ensemble_members, rngs=rngs
     )
     result = pipeline.run(num_steps=num_steps)
+
+
+@app.command()
+def generate_history_data():
+    generate_history_data()
 
 
 if __name__ == "__main__":

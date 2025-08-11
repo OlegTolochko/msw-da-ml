@@ -1,12 +1,12 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 from typer import Typer
-from settings import load_settings
+from core.settings import load_settings
 import matplotlib.pyplot as plt
 import os
 
-from test_pipeline import load_histories, ExperimentHistory
-from settings import load_settings
+from data.experiment_data_generation import load_histories
+from core.settings import load_settings
 
 app = Typer()
 

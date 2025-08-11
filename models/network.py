@@ -1,7 +1,9 @@
+'''CNN for Kalman Filter update correction'''
+
 import torch.nn.functional as F
 import torch.nn as nn
 
-from settings import load_settings
+from core.settings import load_settings
 
 settings = load_settings()
 network_config = settings.network_config

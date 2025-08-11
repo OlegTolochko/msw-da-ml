@@ -8,10 +8,10 @@ from pathlib import Path
 
 import tqdm
 
-from msw_model import EnsembleModel, animate_evolution_from_history
-from assimilation import EnsembleKalmanFilter, QPEnsemble
-from observation_generation import ObservationGenerator
-from settings import load_settings
+from models.msw_model import EnsembleModel, animate_evolution_from_history
+from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
+from data.observation_generation import ObservationGenerator
+from core.settings import load_settings
 
 settings = load_settings()
 global_config = settings.global_config

@@ -4,14 +4,14 @@ from datetime import datetime
 import torch
 from sklearn.model_selection import train_test_split
 import numpy as np
-from data_generation_pipeline import DataGenerationPipeline, DataGenerationState
+from data.msw_data_generation_pipeline import DataGenerationPipeline, DataGenerationState
 from typer import Typer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from settings import load_settings
-from network import CNNModel
-from losses import RMSEBiasLoss
+from core.settings import load_settings
+from models.network import CNNModel
+from training.losses import RMSEBiasLoss
 
 
 app = Typer()

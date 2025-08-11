@@ -1,8 +1,10 @@
+'''Physical shallow water model'''
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from settings import load_settings
+from core.settings import load_settings
 
 
 class EnsembleModel:
