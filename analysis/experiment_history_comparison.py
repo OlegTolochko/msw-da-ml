@@ -18,6 +18,7 @@ experiments_path = (
 )
 os.makedirs(experiments_path, exist_ok=True)
 
+
 def uhr_rmse_comparison(histories: List[ExperimentHistory]):
     """Create RMSE comparison plots for background and analysis states"""
     num_experiments = len(histories)
