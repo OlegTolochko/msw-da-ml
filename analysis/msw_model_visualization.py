@@ -1,4 +1,7 @@
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -9,7 +12,9 @@ from core.settings import load_settings
 settings = load_settings()
 global_config = settings.global_config
 
-visualization_path = f"{global_config.out_path}{global_config.visualizations_out_filename}"
+visualization_path = (
+    f"{global_config.out_path}{global_config.visualizations_out_filename}"
+)
 os.makedirs(visualization_path, exist_ok=True)
 
 
