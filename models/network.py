@@ -84,25 +84,21 @@ class QuantileCNNModel(nn.Module):
                 nn.SELU(),
             ]
 
-        self.lower_projection = [
-            nn.Conv1d(
-                in_channels=network_config.hidden_channels,
-                out_channels=3,
-                kernel_size=network_config.kernel_size,
-                padding=network_config.kernel_size // 2,
-                padding_mode="circular",
-            ),
-        ]
+        self.lower_projection = nn.Conv1d(
+            in_channels=network_config.hidden_channels,
+            out_channels=3,
+            kernel_size=network_config.kernel_size,
+            padding=network_config.kernel_size // 2,
+            padding_mode="circular",
+        )
 
-        self.higher_projection = [
-            nn.Conv1d(
-                in_channels=network_config.hidden_channels,
-                out_channels=3,
-                kernel_size=network_config.kernel_size,
-                padding=network_config.kernel_size // 2,
-                padding_mode="circular",
-            ),
-        ]
+        self.higher_projection = nn.Conv1d(
+            in_channels=network_config.hidden_channels,
+            out_channels=3,
+            kernel_size=network_config.kernel_size,
+            padding=network_config.kernel_size // 2,
+            padding_mode="circular",
+        )
 
         self.network = nn.Sequential(*layers)
 
