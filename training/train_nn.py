@@ -1,5 +1,8 @@
 import os
 from datetime import datetime
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 from sklearn.model_selection import train_test_split
@@ -287,4 +290,4 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
 
 
 if __name__ == "__main__":
-    app()
+    train_quantile_nn("pipeline_state")

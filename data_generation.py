@@ -4,7 +4,7 @@ from typer import Typer
 
 from core.random_manager import RandomGenerators
 from core.settings import load_settings
-from data.msw_data_generation_pipeline import DataGenerationPipeline
+from data.msw_data_generation import DataGenerationPipeline
 from data.experiment_data_generation import generate_experiment_data
 
 

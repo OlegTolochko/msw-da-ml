@@ -1,4 +1,7 @@
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataclasses import dataclass
 from typing import Dict, Any
@@ -97,6 +100,7 @@ class DataGenerationPipeline:
         if not pipeline_state_name.endswith(".pkl"):
             load_path += ".pkl"
 
+        print(load_path)
         with open(load_path, "rb") as f:
             state = pickle.load(f)
         print(f"Pipeline state loaded from: {load_path}")
