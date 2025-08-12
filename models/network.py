@@ -1,4 +1,4 @@
-'''CNN for Kalman Filter update correction'''
+"""CNN for Kalman Filter update correction"""
 
 import torch.nn.functional as F
 import torch.nn as nn
@@ -54,3 +54,63 @@ class CNNModel(nn.Module):
         x[:, 2] = F.relu(x[:, 2])
 
         return x
+
+
+class QuantileCNNModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        layers = []
+        layers += [
+            nn.Conv1d(
+                in_channels=network_config.in_channels,
+                out_channels=network_config.hidden_channels,
+                kernel_size=network_config.kernel_size,
+                padding=network_config.kernel_size // 2,
+                padding_mode="circular",
+            ),
+            nn.SELU(),
+        ]
+
+        for i in range(network_config.num_layers - 2):
+            layers += [
+                nn.Conv1d(
+                    in_channels=network_config.hidden_channels,
+                    out_channels=network_config.hidden_channels,
+                    kernel_size=network_config.kernel_size,
+                    padding=network_config.kernel_size // 2,
+                    padding_mode="circular",
+                ),
+                nn.SELU(),
+            ]
+
+        self.lower_projection = [
+            nn.Conv1d(
+                in_channels=network_config.hidden_channels,
+                out_channels=3,
+                kernel_size=network_config.kernel_size,
+                padding=network_config.kernel_size // 2,
+                padding_mode="circular",
+            ),
+        ]
+
+        self.higher_projection = [
+            nn.Conv1d(
+                in_channels=network_config.hidden_channels,
+                out_channels=3,
+                kernel_size=network_config.kernel_size,
+                padding=network_config.kernel_size // 2,
+                padding_mode="circular",
+            ),
+        ]
+
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.network(x)
+        x_lower = self.lower_projection(x)
+        x_higher = self.higher_projection(x)
+        x_lower[:, 2] = F.relu(x_lower[:, 2])
+        x_higher[:, 2] = F.relu(x_higher[:, 2])
+
+        return x_lower, x_higher
