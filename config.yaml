@@ -82,4 +82,5 @@ global_config:
   trained_nn_model_out_filename: trained_nn_models/
   normalization_out_filename: normalization_stats/
   experiment_histories_out_filename: experiment_histories/
+  trained_quantile_nn_model_out_filename: trained_quantile_nn_models/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

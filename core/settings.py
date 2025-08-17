@@ -93,6 +93,7 @@ class GlobalConfig(BaseModel):
     trained_nn_model_out_filename: str
     normalization_out_filename: str
     experiment_histories_out_filename: str
+    trained_quantile_nn_model_out_filename: str
     base_seed: int
 
 
