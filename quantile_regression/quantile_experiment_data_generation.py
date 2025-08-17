@@ -179,9 +179,10 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[QuantileExperimentHist
 
 def save_histories(
     histories: List[QuantileExperimentHistory],
+    loaded_model_name: str,
 ):
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    save_name = f"quantile_hist_{loaded_model_name}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = f"{experiments_path}{save_name}"
     save_data = {}
 
@@ -189,19 +190,18 @@ def save_histories(
         save_data[f"truth_{i}"] = np.array(hist.truth)
         save_data[f"enkf_analysis_{i}"] = np.array(hist.enkf_analysis)
         save_data[f"qpens_analysis_{i}"] = np.array(hist.qpens_analysis)
-        save_data[f"cnn_analysis_{i}"] = np.array(hist.cnn_analysis)
-        save_data[f"enkf_background_{i}"] = np.array(hist.enkf_background)
-        save_data[f"qpens_background_{i}"] = np.array(hist.qpens_background)
-        save_data[f"cnn_background_{i}"] = np.array(hist.cnn_background)
+        save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(hist.cnn_analysis_lower_quantiles)
+        save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(hist.cnn_analysis_upper_quantiles)
         save_data[f"seed_{i}"] = hist.seed
 
     save_data["num_experiments"] = len(histories)
 
     np.savez_compressed(save_path, **save_data)
-    print(f"Histories saved to {save_path}")
+    print(f"Quantile histories saved to {save_path}")
+    return save_name
 
 
-def load_histories(load_name: str) -> List[ExperimentHistory]:
+def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
     if not load_name.endswith(".npz"):
         load_name += ".npz"
 
@@ -211,14 +211,12 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
     histories = []
     for i in range(num_experiments):
-        history = ExperimentHistory(
+        history = QuantileExperimentHistory(
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
-            cnn_analysis=list(data[f"cnn_analysis_{i}"]),
-            enkf_background=list(data[f"enkf_background_{i}"]),
-            qpens_background=list(data[f"qpens_background_{i}"]),
-            cnn_background=list(data[f"cnn_background_{i}"]),
+            cnn_analysis_lower_quantiles=list(data[f"cnn_analysis_lower_quantiles_{i}"]),
+            cnn_analysis_upper_quantiles=list(data[f"cnn_analysis_upper_quantiles_{i}"]),
             seed=int(data[f"seed_{i}"]),
         )
         histories.append(history)
@@ -228,6 +226,7 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
 def generate_experiment_data(model_name: str = ""):
     histories, loaded_model_name = run_pipeline(model_name)
-    save_histories(histories, loaded_model_name)
+    save_name = save_histories(histories, loaded_model_name)
 
-    print(f"Generated {len(histories)} experiment histories")
+    print(f"Generated {len(histories)} quantile experiment histories")
+    return save_name
