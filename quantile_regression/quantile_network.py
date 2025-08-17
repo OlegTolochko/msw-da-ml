@@ -1,5 +1,3 @@
-"""CNN for Kalman Filter update correction"""
-
 import torch.nn.functional as F
 import torch.nn as nn
 
@@ -9,7 +7,7 @@ settings = load_settings()
 network_config = settings.network_config
 
 
-class CNNModel(nn.Module):
+class QuantileCNNModel(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -37,20 +35,29 @@ class CNNModel(nn.Module):
                 nn.SELU(),
             ]
 
-        layers += [
-            nn.Conv1d(
-                in_channels=network_config.hidden_channels,
-                out_channels=3,
-                kernel_size=network_config.kernel_size,
-                padding=network_config.kernel_size // 2,
-                padding_mode="circular",
-            ),
-        ]
+        self.lower_projection = nn.Conv1d(
+            in_channels=network_config.hidden_channels,
+            out_channels=3,
+            kernel_size=network_config.kernel_size,
+            padding=network_config.kernel_size // 2,
+            padding_mode="circular",
+        )
+
+        self.higher_projection = nn.Conv1d(
+            in_channels=network_config.hidden_channels,
+            out_channels=3,
+            kernel_size=network_config.kernel_size,
+            padding=network_config.kernel_size // 2,
+            padding_mode="circular",
+        )
 
         self.network = nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.network(x)
-        x[:, 2] = F.relu(x[:, 2])
+        x_lower = self.lower_projection(x)
+        x_higher = self.higher_projection(x)
+        x_lower[:, 2] = F.relu(x_lower[:, 2])
+        x_higher[:, 2] = F.relu(x_higher[:, 2])
 
-        return x
+        return x_lower, x_higher
