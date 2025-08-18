@@ -43,7 +43,7 @@ def load_generated_data(pipeline_state_name: str):
 
 
 @app.command()
-def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str):
+def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str, normalization_path: str):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
@@ -159,7 +159,7 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
     model = CNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        pipeline_state_name, device, model_name
+        pipeline_state_name, device, model_name, normalization_path=normalization_path
     )
 
     criterion = RMSEBiasLoss()
