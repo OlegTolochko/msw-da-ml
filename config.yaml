@@ -64,8 +64,8 @@ inference_config:
   num_ensemble_members: 10
 
 experiment_config:
-  base_seed: 143
-  num_seeds: 100
+  base_seed: 43
+  num_seeds: 2
   num_inference_steps: 200
   num_ensemble_members: 10
 
@@ -83,4 +83,6 @@ global_config:
   normalization_out_filename: normalization_stats/
   experiment_histories_out_filename: experiment_histories/
   trained_quantile_nn_model_out_filename: trained_quantile_nn_models/
+  quantile_normalization_out_filename: quantile_normalization_stats/
+  quantile_experiment_histories_out_filename: quantile_experiment_histories/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs
