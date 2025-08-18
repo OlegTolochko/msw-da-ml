@@ -1,4 +1,5 @@
 import os
+import sys
 import copy
 from typing import List, Tuple
 from dataclasses import dataclass
@@ -6,8 +7,9 @@ import datetime
 
 import torch
 import numpy as np
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from inference import load_normalization, load_trained_model
+from quantile_inference import load_normalization, load_trained_model
 from models.msw_model import EnsembleModel
 from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
 from data.observation_generation import ObservationGenerator
@@ -20,7 +22,7 @@ experiment_config = settings.experiment_config
 global_config = settings.global_config
 
 experiments_path = (
-    f"{global_config.out_path}{global_config.experiment_histories_out_filename}"
+    f"{global_config.out_path}{global_config.quantile_experiment_histories_out_filename}"
 )
 os.makedirs(experiments_path, exist_ok=True)
 
@@ -230,3 +232,5 @@ def generate_experiment_data(model_name: str = ""):
 
     print(f"Generated {len(histories)} quantile experiment histories")
     return save_name
+
+generate_experiment_data()
