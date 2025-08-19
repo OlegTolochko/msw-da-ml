@@ -73,6 +73,16 @@ def quantile_conformal_prediction(hist_name: str, normalize: bool = False):
     )
 
 
+def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
+    num_seeds, *mid, num_grid_points = scores.shape
+    s = scores.reshape(num_seeds * num_grid_points, *mid)
+    m = s.shape[0]
+    k = int(np.ceil((1.0 - alpha) * (m + 1))) - 1
+    k = np.clip(k, 0, m - 1)
+    s_part = np.partition(s, k, axis=0)
+    return s_part[k]
+
+
 def calibrate_quantile_intervals_symmetric(truth_calib, cnn_lower_calib, cnn_upper_calib):
     """
     Calibrate quantile intervals using conformal prediction.
