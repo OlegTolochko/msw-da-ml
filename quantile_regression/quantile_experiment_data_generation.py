@@ -118,7 +118,9 @@ class ExperimentPipeline:
             cnn_lower_quantile, cnn_upper_quantile = self._apply_cnn_correction(
                 cnn_enkf_assimilated, obs_data.locations
             )
-            cnn_corrected = cnn_lower_quantile + (cnn_upper_quantile-cnn_lower_quantile)
+            cnn_corrected = 0.5 * (
+                cnn_lower_quantile + cnn_upper_quantile
+            )
             cnn_model.assimilate(cnn_corrected)
 
             histories.cnn_analysis_lower_quantiles.append(cnn_lower_quantile.copy())
@@ -232,5 +234,3 @@ def generate_experiment_data(model_name: str = ""):
 
     print(f"Generated {len(histories)} quantile experiment histories")
     return save_name
-
-generate_experiment_data()
