@@ -234,3 +234,6 @@ def generate_experiment_data(model_name: str = ""):
 
     print(f"Generated {len(histories)} quantile experiment histories")
     return save_name
+
+if __name__ == "__main__":
+    generate_experiment_data()

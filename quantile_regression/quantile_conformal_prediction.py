@@ -19,9 +19,32 @@ global_config = settings.global_config
 viz_dir = f"{global_config.out_path}{global_config.visualizations_out_filename}"
 os.makedirs(viz_dir, exist_ok=True)
 
+@app.command()
+def raw_quantile_conformal_prediction(hist_name: str):
+    histories = load_histories(hist_name)
+    truth_hist = np.asarray([history.truth for history in histories])
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    cnn_lower_hist = np.asarray([history.cnn_analysis_lower_quantiles for history in histories])
+    cnn_upper_hist = np.asarray([history.cnn_analysis_upper_quantiles for history in histories])
+
+    cnn_lower_mean = np.mean(cnn_lower_hist, axis=(-1))
+    cnn_upper_mean = np.mean(cnn_upper_hist, axis=(-1))
+
+    coverage = check_quantile_coverage(qpens_hist, cnn_lower_mean, cnn_upper_mean)
+    
+    print(f"Target coverage: {config.calibration_quantile:.0%}")
+    print(f"Actual coverage: {np.mean(coverage):.2%}")
+    
+    visualize_quantile_coverage(coverage, hist_name)
+    visualize_quantile_intervals(cnn_lower_mean, cnn_upper_mean, hist_name)
+    visualize_quantile_gridpoints(
+        cnn_lower_mean, cnn_upper_mean, truth_hist, qpens_hist, hist_name
+    )
+
+
 
 @app.command()
-def quantile_conformal_prediction(hist_name: str, normalize: bool = False):
+def quantile_conformal_prediction(hist_name: str):
     """
     Runs conformal prediction pipeline for quantile regression models.
     """
@@ -44,16 +67,14 @@ def quantile_conformal_prediction(hist_name: str, normalize: bool = False):
     )
 
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
-    lower_adjustment, upper_adjustment = calibrate_quantile_intervals(
+    quantile_adjustment = calibrate_quantile_intervals_symmetric(
         truth_calib=qpens_calib,  # Use QPEns as ground truth for CNN
         cnn_lower_calib=cnn_lower_calib,
-        cnn_upper_calib=cnn_upper_calib,
-        normalize=normalize
+        cnn_upper_calib=cnn_upper_calib
     )
 
-    cnn_lower_test_adjusted, cnn_upper_test_adjusted = apply_quantile_adjustments(
-        cnn_lower_test, cnn_upper_test, lower_adjustment, upper_adjustment
+    cnn_lower_test_adjusted, cnn_upper_test_adjusted = apply_symmetric_quantile_adjustments(
+        cnn_lower_test, cnn_upper_test, quantile_adjustment
     )
 
     # Check coverage
@@ -62,10 +83,6 @@ def quantile_conformal_prediction(hist_name: str, normalize: bool = False):
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     print(f"Actual coverage: {np.mean(coverage):.2%}")
     
-    # Visualizations
-    if normalize:
-        hist_name += "_normalized"
-
     visualize_quantile_coverage(coverage, hist_name)
     visualize_quantile_intervals(cnn_lower_test_adjusted, cnn_upper_test_adjusted, hist_name)
     visualize_quantile_gridpoints(
@@ -95,27 +112,28 @@ def calibrate_quantile_intervals_symmetric(truth_calib, cnn_lower_calib, cnn_upp
     cnn_lower_mean = np.mean(cnn_lower_calib, axis=-1)
     cnn_upper_mean = np.mean(cnn_upper_calib, axis=-1)
 
-    E = np.maximum(cnn_lower_mean - truth_mean, truth_mean - cnn_upper_mean)
+    alpha = 1.0 - config.calibration_quantile
+    quantile_corrections = []
+    
+    for var_idx in range(3):
+        E_var = np.maximum(
+            cnn_lower_mean[:,:, var_idx, :] - truth_mean[:,:, var_idx, :],
+            truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :]
+        )
+        
+        quantile_correction_var = calculate_empirical_quantile(E_var, alpha=alpha)
+        quantile_corrections.append(quantile_correction_var)
+    
+    return np.stack(quantile_corrections, axis=-1)
 
-    plot_quantile_non_conformity_scores()
+def apply_symmetric_quantile_adjustments(cnn_lower_test, cnn_upper_test, quantile_correction):
+    cnn_lower_test_mean = np.mean(cnn_lower_test, axis=(-1))
+    cnn_upper_test_mean = np.mean(cnn_upper_test, axis=(-1))
+    quantile_correction_expanded = quantile_correction[None, ..., None]
+    cnn_lower_adjusted = cnn_lower_test_mean - quantile_correction_expanded
+    cnn_upper_adjusted = cnn_upper_test_mean + quantile_correction_expanded
     
-    pass
-
-
-def apply_quantile_adjustments(cnn_lower, cnn_upper, lower_adjustment, upper_adjustment):
-    """
-    Apply conformal adjustments to quantile predictions.
-    """
-    lower_adj_expanded = np.expand_dims(lower_adjustment, (0, -1))
-    upper_adj_expanded = np.expand_dims(upper_adjustment, (0, -1))
-    
-    lower_adj_tiled = np.tile(lower_adj_expanded, (cnn_lower.shape[0], 1, 1, cnn_lower.shape[-2], 1))
-    upper_adj_tiled = np.tile(upper_adj_expanded, (cnn_upper.shape[0], 1, 1, cnn_upper.shape[-2], 1))
-    
-    adjusted_lower = cnn_lower - lower_adj_tiled
-    adjusted_upper = cnn_upper + upper_adj_tiled
-    
-    return adjusted_lower, adjusted_upper
+    return cnn_lower_adjusted, cnn_upper_adjusted
 
 
 def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles):
@@ -123,10 +141,8 @@ def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles):
     Check coverage of quantile intervals.
     """
     test_mean = np.mean(test_set, axis=-1)
-    lower_mean = np.mean(lower_quantiles, axis=-1)
-    upper_mean = np.mean(upper_quantiles, axis=-1)
     
-    coverage = (test_mean >= lower_mean) & (test_mean <= upper_mean)
+    coverage = (test_mean >= lower_quantiles) & (test_mean <= upper_quantiles)
     return coverage
 
 
@@ -174,8 +190,8 @@ def visualize_quantile_intervals(lower_quantiles, upper_quantiles, hist_name):
     """
     Visualize quantile interval widths over time.
     """
-    lower_mean = np.mean(lower_quantiles, axis=(0, -1, -2))  # Average over seeds, grid, ensemble
-    upper_mean = np.mean(upper_quantiles, axis=(0, -1, -2))
+    lower_mean = np.mean(lower_quantiles, axis=(0, -1))  # Average over seeds, grid
+    upper_mean = np.mean(upper_quantiles, axis=(0, -1))
     interval_widths = upper_mean - lower_mean  # Shape: (timesteps, 3)
     
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -212,8 +228,8 @@ def visualize_quantile_gridpoints(
     
     truth_mean = np.mean(truth[random_seed, timestep], axis=-1)
     qpens_mean = np.mean(qpens[random_seed, timestep], axis=-1)
-    lower_mean = np.mean(lower_quantiles[random_seed, timestep], axis=-1)
-    upper_mean = np.mean(upper_quantiles[random_seed, timestep], axis=-1)
+    lower_mean = lower_quantiles[random_seed, timestep]
+    upper_mean = upper_quantiles[random_seed, timestep]
     
     fig, axes = plt.subplots(3, 1, figsize=(15, 12))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
@@ -245,43 +261,5 @@ def visualize_quantile_gridpoints(
     print(f"Quantile gridpoint visualization saved to: {save_path}")
 
 
-def plot_quantile_non_conformity_scores(lower_violations, upper_violations, 
-                                       random_seed=0, timestep=50):
-    """
-    Plot non-conformity scores for quantile regression.
-    """
-    if random_seed >= len(lower_violations) or timestep >= len(lower_violations[0]):
-        return
-    
-    lower_scores = lower_violations[random_seed, timestep]
-    upper_scores = upper_violations[random_seed, timestep]
-    
-    fig, axes = plt.subplots(3, 2, figsize=(15, 12))
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-    
-    for i, var_name in enumerate(variable_names):
-        axes[i, 0].hist(lower_scores[i], bins=30, alpha=0.7, color='blue',
-                       edgecolor='black', label=f'{var_name} Lower Violations')
-        axes[i, 0].set_xlabel('Lower Violation Score')
-        axes[i, 0].set_ylabel('Frequency')
-        axes[i, 0].set_title(f'{var_name} Lower Violations')
-        axes[i, 0].legend()
-        axes[i, 0].grid(True, alpha=0.3)
-        
-        axes[i, 1].hist(upper_scores[i], bins=30, alpha=0.7, color='red',
-                       edgecolor='black', label=f'{var_name} Upper Violations')
-        axes[i, 1].set_xlabel('Upper Violation Score')
-        axes[i, 1].set_ylabel('Frequency')
-        axes[i, 1].set_title(f'{var_name} Upper Violations')
-        axes[i, 1].legend()
-        axes[i, 1].grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    
-    save_path = f"{viz_dir}quantile_non_conformity_seed{random_seed}_t{timestep}.png"
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"Non-conformity scores saved to: {save_path}")
-
-
 if __name__ == "__main__":
-    app()
+    quantile_conformal_prediction("quantile_hist_quantile_model_20250819T115949.pth_20250819T132835_43_4")
