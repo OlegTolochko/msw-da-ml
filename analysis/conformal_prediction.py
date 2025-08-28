@@ -96,6 +96,9 @@ def conformal_prediction(hist_name: str, normalize: bool = False):
 def check_coverage(
     test_set: np.ndarray, upper_quantiles: np.ndarray, lower_quantiles: np.ndarray
 ):
+    """
+    Checks whether test set is inside lower and upper intervals over ensemble dimension.
+    """
     test_ens_mean = np.mean(test_set, axis=-1)
     coverage = (test_ens_mean > lower_quantiles) & (test_ens_mean < upper_quantiles)
 
@@ -123,7 +126,6 @@ def calibrate(truth_calib: np.ndarray, cnn_calib: np.ndarray, normalization_term
         cnn_truth_mean_diff, q=config.calibration_quantile, axis=(0, -1)
     )  # shape: (num_timesteps, 3)
 
-    plot_non_conformity_scores(cnn_truth_mean_diff, quantiles)
     return quantiles
 
 
