@@ -7,9 +7,13 @@ import datetime
 
 import torch
 import numpy as np
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from quantile_inference import load_normalization, load_trained_model
+from quantile_regression.quantile_inference import (
+    load_normalization,
+    load_trained_model,
+)
 from models.msw_model import EnsembleModel
 from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
 from data.observation_generation import ObservationGenerator
@@ -21,9 +25,7 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-experiments_path = (
-    f"{global_config.out_path}{global_config.quantile_experiment_histories_out_filename}"
-)
+experiments_path = f"{global_config.out_path}{global_config.quantile_experiment_histories_out_filename}"
 os.makedirs(experiments_path, exist_ok=True)
 
 
@@ -118,9 +120,7 @@ class ExperimentPipeline:
             cnn_lower_quantile, cnn_upper_quantile = self._apply_cnn_correction(
                 cnn_enkf_assimilated, obs_data.locations
             )
-            cnn_corrected = 0.5 * (
-                cnn_lower_quantile + cnn_upper_quantile
-            )
+            cnn_corrected = 0.5 * (cnn_lower_quantile + cnn_upper_quantile)
             cnn_model.assimilate(cnn_corrected)
 
             histories.cnn_analysis_lower_quantiles.append(cnn_lower_quantile.copy())
@@ -154,16 +154,22 @@ class ExperimentPipeline:
         corrected_lower_quantile = (
             lower_quantile * self.norm_stats["std_out"]
         ) + self.norm_stats["mean_out"]
-        corrected_upper_quantile =  (
+        corrected_upper_quantile = (
             upper_quantile * self.norm_stats["std_out"]
         ) + self.norm_stats["mean_out"]
-        corrected_lower_quantile_permuted = corrected_lower_quantile.permute(1, 2, 0).cpu().numpy()
-        corrected_upper_quantile_permuted = corrected_upper_quantile.permute(1, 2, 0).cpu().numpy()
+        corrected_lower_quantile_permuted = (
+            corrected_lower_quantile.permute(1, 2, 0).cpu().numpy()
+        )
+        corrected_upper_quantile_permuted = (
+            corrected_upper_quantile.permute(1, 2, 0).cpu().numpy()
+        )
 
         return corrected_lower_quantile_permuted, corrected_upper_quantile_permuted
 
 
-def run_pipeline(load_model_name: str = "") -> Tuple[List[QuantileExperimentHistory], str]:
+def run_pipeline(
+    load_model_name: str = "",
+) -> Tuple[List[QuantileExperimentHistory], str]:
     pipeline = ExperimentPipeline(load_model_name)
     all_histories = []
 
@@ -194,8 +200,12 @@ def save_histories(
         save_data[f"truth_{i}"] = np.array(hist.truth)
         save_data[f"enkf_analysis_{i}"] = np.array(hist.enkf_analysis)
         save_data[f"qpens_analysis_{i}"] = np.array(hist.qpens_analysis)
-        save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(hist.cnn_analysis_lower_quantiles)
-        save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(hist.cnn_analysis_upper_quantiles)
+        save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(
+            hist.cnn_analysis_lower_quantiles
+        )
+        save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(
+            hist.cnn_analysis_upper_quantiles
+        )
         save_data[f"seed_{i}"] = hist.seed
 
     save_data["num_experiments"] = len(histories)
@@ -219,8 +229,12 @@ def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
-            cnn_analysis_lower_quantiles=list(data[f"cnn_analysis_lower_quantiles_{i}"]),
-            cnn_analysis_upper_quantiles=list(data[f"cnn_analysis_upper_quantiles_{i}"]),
+            cnn_analysis_lower_quantiles=list(
+                data[f"cnn_analysis_lower_quantiles_{i}"]
+            ),
+            cnn_analysis_upper_quantiles=list(
+                data[f"cnn_analysis_upper_quantiles_{i}"]
+            ),
             seed=int(data[f"seed_{i}"]),
         )
         histories.append(history)
@@ -228,12 +242,13 @@ def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
     return histories
 
 
-def generate_experiment_data(model_name: str = ""):
+def generate_experiment_data_qr(model_name: str = ""):
     histories, loaded_model_name = run_pipeline(model_name)
     save_name = save_histories(histories, loaded_model_name)
 
     print(f"Generated {len(histories)} quantile experiment histories")
     return save_name
 
+
 if __name__ == "__main__":
-    generate_experiment_data()
+    generate_experiment_data_qr()

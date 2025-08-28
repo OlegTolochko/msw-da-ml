@@ -1,8 +1,11 @@
 import os
+import sys
 import copy
 from typing import List, Tuple
 from dataclasses import dataclass
-import datetime
+from datetime import datetime
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import numpy as np
@@ -229,6 +232,10 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
 def generate_experiment_data(model_name: str = ""):
     histories, loaded_model_name = run_pipeline(model_name)
-    save_histories(histories, loaded_model_name)
+    save_histories(histories)
 
     print(f"Generated {len(histories)} experiment histories")
+
+
+if __name__ == "__main__":
+    generate_experiment_data()

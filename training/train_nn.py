@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from core.settings import load_settings
 from models.network import CNNModel
-from training.losses import RMSEBiasLoss 
+from training.losses import RMSEBiasLoss
 
 
 app = Typer()
@@ -43,7 +43,9 @@ def load_generated_data(pipeline_state_name: str):
 
 
 @app.command()
-def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str, normalization_path: str):
+def get_train_val_loaders(
+    pipeline_state_name: str, device: str, model_name: str, normalization_path: str
+):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)

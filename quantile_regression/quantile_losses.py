@@ -1,5 +1,6 @@
 import torch
 
+
 def pinball_loss(y_true: torch.Tensor, y_pred: torch.Tensor, tau: float):
     err = y_true - y_pred
 

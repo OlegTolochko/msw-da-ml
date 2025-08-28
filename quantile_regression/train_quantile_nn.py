@@ -19,15 +19,22 @@ app = Typer()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_quantile_nn_model_out_filename = settings.global_config.trained_quantile_nn_model_out_filename
+trained_quantile_nn_model_out_filename = (
+    settings.global_config.trained_quantile_nn_model_out_filename
+)
 trained_quantile_nn_model_path = (
     f"{settings.global_config.out_path}{trained_quantile_nn_model_out_filename}"
 )
 os.makedirs(trained_quantile_nn_model_path, exist_ok=True)
 
-quantile_normalization_out_filename = settings.global_config.quantile_normalization_out_filename
-quantile_normalization_path = f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
+quantile_normalization_out_filename = (
+    settings.global_config.quantile_normalization_out_filename
+)
+quantile_normalization_path = (
+    f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
+)
 os.makedirs(quantile_normalization_path, exist_ok=True)
+
 
 @app.command()
 def train_quantile_nn(
@@ -49,7 +56,10 @@ def train_quantile_nn(
     model = QuantileCNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        pipeline_state_name, device, model_name, normalization_path=quantile_normalization_path
+        pipeline_state_name,
+        device,
+        model_name,
+        normalization_path=quantile_normalization_path,
     )
 
     lower_quantile = 0.5 * (1 - quantile_tau)
@@ -107,6 +117,7 @@ def train_quantile_nn(
 
     torch.save(model.state_dict(), model_save_path)
     print(f"Saved the model to {model_save_path}.")
+
 
 if __name__ == "__main__":
     app()

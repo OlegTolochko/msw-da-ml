@@ -5,9 +5,10 @@ import copy
 import torch
 import numpy as np
 from typer import Typer
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from quantile_network import QuantileCNNModel
+from quantile_regression.quantile_network import QuantileCNNModel
 from core.settings import load_settings
 
 app = Typer()
@@ -15,13 +16,19 @@ app = Typer()
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_quantile_nn_model_out_filename = settings.global_config.trained_quantile_nn_model_out_filename
+trained_quantile_nn_model_out_filename = (
+    settings.global_config.trained_quantile_nn_model_out_filename
+)
 trained_quantile_nn_model_path = (
     f"{settings.global_config.out_path}{trained_quantile_nn_model_out_filename}"
 )
 
-quantile_normalization_out_filename = settings.global_config.quantile_normalization_out_filename
-quantile_normalization_path = f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
+quantile_normalization_out_filename = (
+    settings.global_config.quantile_normalization_out_filename
+)
+quantile_normalization_path = (
+    f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
+)
 
 
 def get_most_recent_model_name():

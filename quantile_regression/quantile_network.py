@@ -56,6 +56,6 @@ class QuantileCNNModel(nn.Module):
     def forward(self, x):
         x = self.network(x)
         x_lower = self.lower_projection(x)
-        x_higher = self.higher_projection(x) 
+        x_higher = self.higher_projection(x)
 
         return x_lower, x_higher

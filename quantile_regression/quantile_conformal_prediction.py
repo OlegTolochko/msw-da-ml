@@ -7,7 +7,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from quantile_experiment_data_generation import load_histories
+from quantile_regression.quantile_experiment_data_generation import load_histories
 from core.settings import load_settings
 
 app = Typer()
@@ -19,74 +19,117 @@ global_config = settings.global_config
 viz_dir = f"{global_config.out_path}{global_config.visualizations_out_filename}"
 os.makedirs(viz_dir, exist_ok=True)
 
+
 @app.command()
 def raw_quantile_conformal_prediction(hist_name: str):
     histories = load_histories(hist_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
-    cnn_lower_hist = np.asarray([history.cnn_analysis_lower_quantiles for history in histories])
-    cnn_upper_hist = np.asarray([history.cnn_analysis_upper_quantiles for history in histories])
+    cnn_lower_hist = np.asarray(
+        [history.cnn_analysis_lower_quantiles for history in histories]
+    )
+    cnn_upper_hist = np.asarray(
+        [history.cnn_analysis_upper_quantiles for history in histories]
+    )
 
-    cnn_lower_mean = np.mean(cnn_lower_hist, axis=(-1))
-    cnn_upper_mean = np.mean(cnn_upper_hist, axis=(-1))
+    (
+        truth_calib,
+        truth_test,
+        qpens_calib,
+        qpens_test,
+        cnn_lower_calib,
+        cnn_lower_test,
+        cnn_upper_calib,
+        cnn_upper_test,
+    ) = train_test_split(
+        truth_hist,
+        qpens_hist,
+        cnn_lower_hist,
+        cnn_upper_hist,
+        test_size=1 - config.calibration_split_ratio,
+        random_state=config.calibration_split_seed,
+    )
 
-    coverage = check_quantile_coverage(qpens_hist, cnn_lower_mean, cnn_upper_mean)
-    
+    cnn_lower_mean = np.mean(cnn_lower_test, axis=(-1))
+    cnn_upper_mean = np.mean(cnn_upper_test, axis=(-1))
+
+    coverage = check_quantile_coverage(qpens_test, cnn_lower_mean, cnn_upper_mean)
+
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     print(f"Actual coverage: {np.mean(coverage):.2%}")
-    
-    visualize_quantile_coverage(coverage, hist_name)
-    visualize_quantile_intervals(cnn_lower_mean, cnn_upper_mean, hist_name)
+    save_name = hist_name + "_raw"
+
+    visualize_quantile_coverage(coverage, save_name)
+    visualize_quantile_intervals(cnn_lower_mean, cnn_upper_mean, save_name)
     visualize_quantile_gridpoints(
-        cnn_lower_mean, cnn_upper_mean, truth_hist, qpens_hist, hist_name
+        cnn_lower_mean, cnn_upper_mean, truth_test, qpens_test, save_name
     )
 
 
-
 @app.command()
-def quantile_conformal_prediction(hist_name: str):
+def cqr_prediction(hist_name: str):
     """
     Runs conformal prediction pipeline for quantile regression models.
     """
     histories = load_histories(hist_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
-    cnn_lower_hist = np.asarray([history.cnn_analysis_lower_quantiles for history in histories])
-    cnn_upper_hist = np.asarray([history.cnn_analysis_upper_quantiles for history in histories])
-
-    # Split data for calibration and testing
-    truth_calib, truth_test, qpens_calib, qpens_test, cnn_lower_calib, cnn_lower_test, cnn_upper_calib, cnn_upper_test = (
-        train_test_split(
-            truth_hist,
-            qpens_hist,
-            cnn_lower_hist,
-            cnn_upper_hist,
-            test_size=1 - config.calibration_split_ratio,
-            random_state=config.calibration_split_seed,
-        )
+    cnn_lower_hist = np.asarray(
+        [history.cnn_analysis_lower_quantiles for history in histories]
+    )
+    cnn_upper_hist = np.asarray(
+        [history.cnn_analysis_upper_quantiles for history in histories]
     )
 
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+    # Split data for calibration and testing
+    (
+        truth_calib,
+        truth_test,
+        qpens_calib,
+        qpens_test,
+        cnn_lower_calib,
+        cnn_lower_test,
+        cnn_upper_calib,
+        cnn_upper_test,
+    ) = train_test_split(
+        truth_hist,
+        qpens_hist,
+        cnn_lower_hist,
+        cnn_upper_hist,
+        test_size=1 - config.calibration_split_ratio,
+        random_state=config.calibration_split_seed,
+    )
+
     quantile_adjustment = calibrate_quantile_intervals_symmetric(
         truth_calib=qpens_calib,  # Use QPEns as ground truth for CNN
         cnn_lower_calib=cnn_lower_calib,
-        cnn_upper_calib=cnn_upper_calib
+        cnn_upper_calib=cnn_upper_calib,
     )
 
-    cnn_lower_test_adjusted, cnn_upper_test_adjusted = apply_symmetric_quantile_adjustments(
-        cnn_lower_test, cnn_upper_test, quantile_adjustment
+    cnn_lower_test_adjusted, cnn_upper_test_adjusted = (
+        apply_symmetric_quantile_adjustments(
+            cnn_lower_test, cnn_upper_test, quantile_adjustment
+        )
     )
 
     # Check coverage
-    coverage = check_quantile_coverage(qpens_test, cnn_lower_test_adjusted, cnn_upper_test_adjusted)
-    
+    coverage = check_quantile_coverage(
+        qpens_test, cnn_lower_test_adjusted, cnn_upper_test_adjusted
+    )
+
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     print(f"Actual coverage: {np.mean(coverage):.2%}")
-    
+
     visualize_quantile_coverage(coverage, hist_name)
-    visualize_quantile_intervals(cnn_lower_test_adjusted, cnn_upper_test_adjusted, hist_name)
+    visualize_quantile_intervals(
+        cnn_lower_test_adjusted, cnn_upper_test_adjusted, hist_name
+    )
     visualize_quantile_gridpoints(
-        cnn_lower_test_adjusted, cnn_upper_test_adjusted, truth_test, qpens_test, hist_name
+        cnn_lower_test_adjusted,
+        cnn_upper_test_adjusted,
+        truth_test,
+        qpens_test,
+        hist_name,
     )
 
 
@@ -100,10 +143,12 @@ def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
     return s_part[k]
 
 
-def calibrate_quantile_intervals_symmetric(truth_calib, cnn_lower_calib, cnn_upper_calib):
+def calibrate_quantile_intervals_symmetric(
+    truth_calib, cnn_lower_calib, cnn_upper_calib
+):
     """
     Calibrate quantile intervals using conformal prediction.
-    
+
     Returns:
         Tuple of adjustment factors for lower and upper quantiles
     """
@@ -114,25 +159,28 @@ def calibrate_quantile_intervals_symmetric(truth_calib, cnn_lower_calib, cnn_upp
 
     alpha = 1.0 - config.calibration_quantile
     quantile_corrections = []
-    
+
     for var_idx in range(3):
         E_var = np.maximum(
-            cnn_lower_mean[:,:, var_idx, :] - truth_mean[:,:, var_idx, :],
-            truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :]
+            cnn_lower_mean[:, :, var_idx, :] - truth_mean[:, :, var_idx, :],
+            truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :],
         )
-        
+
         quantile_correction_var = calculate_empirical_quantile(E_var, alpha=alpha)
         quantile_corrections.append(quantile_correction_var)
-    
+
     return np.stack(quantile_corrections, axis=-1)
 
-def apply_symmetric_quantile_adjustments(cnn_lower_test, cnn_upper_test, quantile_correction):
+
+def apply_symmetric_quantile_adjustments(
+    cnn_lower_test, cnn_upper_test, quantile_correction
+):
     cnn_lower_test_mean = np.mean(cnn_lower_test, axis=(-1))
     cnn_upper_test_mean = np.mean(cnn_upper_test, axis=(-1))
     quantile_correction_expanded = quantile_correction[None, ..., None]
     cnn_lower_adjusted = cnn_lower_test_mean - quantile_correction_expanded
     cnn_upper_adjusted = cnn_upper_test_mean + quantile_correction_expanded
-    
+
     return cnn_lower_adjusted, cnn_upper_adjusted
 
 
@@ -141,9 +189,14 @@ def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles):
     Check coverage of quantile intervals.
     """
     test_mean = np.mean(test_set, axis=-1)
-    
-    coverage = (test_mean >= lower_quantiles) & (test_mean <= upper_quantiles)
-    return coverage
+
+    var_coverage = []
+    for var in range(3):
+        var_coverage.append(
+            (test_mean[:, :, var] >= lower_quantiles[:, :, var])
+            & (test_mean[:, :, var] <= upper_quantiles[:, :, var])
+        )
+    return np.stack(var_coverage, axis=-2)
 
 
 def visualize_quantile_coverage(coverage, hist_name):
@@ -153,36 +206,45 @@ def visualize_quantile_coverage(coverage, hist_name):
     # Average over grid points and seeds
     coverage_mean = np.mean(coverage, axis=(-1, 0))  # Shape: (timesteps, 3)
     coverage_std = np.std(np.mean(coverage, axis=-1), axis=0)  # Shape: (timesteps, 3)
-    
+
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-    
+
     for i, (ax, var_name) in enumerate(zip(axes, variable_names)):
         timesteps = range(len(coverage_mean))
-        
-        ax.plot(timesteps, coverage_mean[:, i], 'b-', linewidth=2, label='Actual Coverage')
+
+        ax.plot(
+            timesteps, coverage_mean[:, i], "b-", linewidth=2, label="Actual Coverage"
+        )
         ax.fill_between(
             timesteps,
             coverage_mean[:, i] - coverage_std[:, i],
             coverage_mean[:, i] + coverage_std[:, i],
-            alpha=0.3, color='blue', label='±1 Std Dev'
+            alpha=0.3,
+            color="blue",
+            label="±1 Std Dev",
         )
-        
-        ax.axhline(y=config.calibration_quantile, color='r', linestyle='--', 
-                  linewidth=2, label=f'Target ({config.calibration_quantile:.0%})')
-        
-        ax.set_xlabel('Timestep')
-        ax.set_ylabel('Coverage')
-        ax.set_title(f'{var_name} Coverage over Time')
+
+        ax.axhline(
+            y=config.calibration_quantile,
+            color="r",
+            linestyle="--",
+            linewidth=2,
+            label=f"Target ({config.calibration_quantile:.0%})",
+        )
+
+        ax.set_xlabel("Timestep")
+        ax.set_ylabel("Coverage")
+        ax.set_title(f"{var_name} Coverage over Time")
         ax.legend()
         ax.grid(True, alpha=0.3)
         ax.set_ylim(0, 1)
-    
+
     plt.tight_layout()
-    
-    base_name = hist_name.replace('.npz', '')
+
+    base_name = hist_name.replace(".npz", "")
     save_path = f"{viz_dir}{base_name}_quantile_coverage.png"
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile coverage visualization saved to: {save_path}")
 
 
@@ -193,31 +255,38 @@ def visualize_quantile_intervals(lower_quantiles, upper_quantiles, hist_name):
     lower_mean = np.mean(lower_quantiles, axis=(0, -1))  # Average over seeds, grid
     upper_mean = np.mean(upper_quantiles, axis=(0, -1))
     interval_widths = upper_mean - lower_mean  # Shape: (timesteps, 3)
-    
+
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-    
+
     for i, (ax, var_name) in enumerate(zip(axes, variable_names)):
         timesteps = range(len(interval_widths))
-        ax.plot(timesteps, interval_widths[:, i], 'b-', linewidth=2, label='Interval Width')
-        
-        ax.set_xlabel('Timestep')
-        ax.set_ylabel('Interval Width')
-        ax.set_title(f'{var_name} Quantile Interval Width')
+        ax.plot(
+            timesteps, interval_widths[:, i], "b-", linewidth=2, label="Interval Width"
+        )
+
+        ax.set_xlabel("Timestep")
+        ax.set_ylabel("Interval Width")
+        ax.set_title(f"{var_name} Quantile Interval Width")
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
-    base_name = hist_name.replace('.npz', '')
+
+    base_name = hist_name.replace(".npz", "")
     save_path = f"{viz_dir}{base_name}_quantile_intervals.png"
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile interval visualization saved to: {save_path}")
 
 
 def visualize_quantile_gridpoints(
-    lower_quantiles, upper_quantiles, truth, qpens, hist_name,
-    random_seed=0, timestep=50
+    lower_quantiles,
+    upper_quantiles,
+    truth,
+    qpens,
+    hist_name,
+    random_seed=1,
+    timestep=50,
 ):
     """
     Visualize quantile intervals at specific seed and timestep.
@@ -225,41 +294,59 @@ def visualize_quantile_gridpoints(
     if random_seed >= len(truth) or timestep >= len(truth[0]):
         print(f"Warning: Seed {random_seed} or timestep {timestep} out of range")
         return
-    
+
     truth_mean = np.mean(truth[random_seed, timestep], axis=-1)
     qpens_mean = np.mean(qpens[random_seed, timestep], axis=-1)
     lower_mean = lower_quantiles[random_seed, timestep]
     upper_mean = upper_quantiles[random_seed, timestep]
-    
+
     fig, axes = plt.subplots(3, 1, figsize=(15, 12))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-    
+
     for i, (ax, var_name) in enumerate(zip(axes, variable_names)):
         gridpoints = range(len(truth_mean[i]))
-        
-        ax.fill_between(gridpoints, lower_mean[i], upper_mean[i],
-                       alpha=0.3, color='lightblue', label='Quantile Interval')
-        
-        ax.plot(gridpoints, truth_mean[i], 'go-', markersize=3, 
-               label='Truth', alpha=0.8)
-        ax.plot(gridpoints, qpens_mean[i], 'bs-', markersize=3, 
-               label='QPEns', alpha=0.8)
-        ax.plot(gridpoints, (lower_mean[i] + upper_mean[i])/2, 'r^-', 
-               markersize=3, label='Quantile Midpoint', alpha=0.8)
-        
-        ax.set_xlabel('Grid Point')
+
+        ax.fill_between(
+            gridpoints,
+            lower_mean[i],
+            upper_mean[i],
+            alpha=0.3,
+            color="lightblue",
+            label="Quantile Interval",
+        )
+
+        ax.plot(
+            gridpoints, truth_mean[i], "go-", markersize=3, label="Truth", alpha=0.8
+        )
+        ax.plot(
+            gridpoints, qpens_mean[i], "bs-", markersize=3, label="QPEns", alpha=0.8
+        )
+        ax.plot(
+            gridpoints,
+            (lower_mean[i] + upper_mean[i]) / 2,
+            "r^-",
+            markersize=3,
+            label="Quantile Midpoint",
+            alpha=0.8,
+        )
+
+        ax.set_xlabel("Grid Point")
         ax.set_ylabel(var_name)
-        ax.set_title(f'{var_name} at Seed {random_seed}, Timestep {timestep}')
+        ax.set_title(f"{var_name} at Seed {random_seed}, Timestep {timestep}")
         ax.legend()
         ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
-    
-    base_name = hist_name.replace('.npz', '')
-    save_path = f"{viz_dir}{base_name}_quantile_gridpoints_seed{random_seed}_t{timestep}.png"
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    base_name = hist_name.replace(".npz", "")
+    save_path = (
+        f"{viz_dir}{base_name}_quantile_gridpoints_seed{random_seed}_t{timestep}.png"
+    )
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile gridpoint visualization saved to: {save_path}")
 
 
 if __name__ == "__main__":
-    quantile_conformal_prediction("quantile_hist_quantile_model_20250819T115949.pth_20250819T132835_43_4")
+    raw_quantile_conformal_prediction(
+        "quantile_hist_quantile_model_20250818T150026.pth_20250819T155037_43_2"
+    )
