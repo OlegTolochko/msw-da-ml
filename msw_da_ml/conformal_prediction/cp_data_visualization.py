@@ -5,8 +5,8 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
-from data.experiment_data_generation import ExperimentHistory
-from core.settings import load_settings
+from msw_da_ml.conformal_prediction.cp_data_generation import ExperimentHistory
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 experiment_config = settings.experiment_config

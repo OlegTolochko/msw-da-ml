@@ -1,15 +1,10 @@
 """Physical shallow water model"""
 
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-from core.settings import load_settings
+from msw_da_ml.settings import load_settings
 
 
 class EnsembleModel:

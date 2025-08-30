@@ -5,14 +5,13 @@ import torch
 import numpy as np
 from typer import Typer
 
-from models.network import CNNModel
-from core.settings import load_settings
-from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
-from data.observation_generation import ObservationGenerator
-from models.msw_model import EnsembleModel
-from core.random_manager import RandomGenerators
-from analysis.msw_model_visualization import ModelComparatorVisualizer
-from data.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.settings import load_settings
+from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.msw.observation_generation import ObservationGenerator
+from msw_da_ml.msw.msw_model import EnsembleModel
+from msw_da_ml.msw.random_manager import RandomGenerators
+from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
 
 app = Typer()
 
@@ -155,10 +154,6 @@ def inference(
         )
 
 
-def compare_models():
-    pass
-
-
 @app.command()
 def visualize_from_model(model_name: str = "pipeline_state.pkl"):
     data = DataGenerationPipeline.load_pipeline_state(pipeline_state_name=model_name)
@@ -175,6 +170,8 @@ def visualize_update_performance(
     model_name1: str = "CNN",
     model_name2: str = "Truth",
 ):
+    from msw_da_ml.conformal_prediction.cp_data_visualization import ModelComparatorVisualizer
+
     cnn_history = cnn_model.get_history()
     truth_history = truth_model.get_history()
     print(len(cnn_history))

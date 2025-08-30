@@ -2,10 +2,10 @@ import os
 
 from typer import Typer
 
-from core.random_manager import RandomGenerators
-from core.settings import load_settings
-from data.msw_data_generation import DataGenerationPipeline
-from data.experiment_data_generation import generate_experiment_data
+from msw_da_ml.msw.random_manager import RandomGenerators
+from msw_da_ml.settings import load_settings
+from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.conformal_prediction.cp_data_generation import generate_experiment_data
 
 
 app = Typer()
@@ -27,7 +27,7 @@ def generate_training_data(
 
 @app.command()
 def generate_history_data():
-    generate_history_data()
+    generate_experiment_data()
 
 
 if __name__ == "__main__":

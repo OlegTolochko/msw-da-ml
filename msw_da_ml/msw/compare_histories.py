@@ -1,13 +1,13 @@
 import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from typing import List
+import datetime
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np
+from matplotlib.patches import Rectangle
 
-from core.settings import load_settings
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 global_config = settings.global_config
@@ -101,8 +101,6 @@ class ModelComparatorVisualizer:
         self.stats_ax.set_xlim(0, 1)
         self.stats_ax.set_ylim(0, 1)
         self.stats_ax.axis("off")
-
-        from matplotlib.patches import Rectangle
 
         bg_rect = Rectangle(
             (0, 0), 1, 1, facecolor="white", edgecolor="gray", alpha=0.9, linewidth=2

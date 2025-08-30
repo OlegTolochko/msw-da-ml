@@ -1,7 +1,4 @@
 import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataclasses import dataclass
 from typing import Dict, Any
@@ -11,10 +8,10 @@ from pathlib import Path
 
 import tqdm
 
-from models.msw_model import EnsembleModel, animate_evolution_from_history
-from assimilation.assimilation import EnsembleKalmanFilter, QPEnsemble
-from data.observation_generation import ObservationGenerator
-from core.settings import load_settings
+from msw_da_ml.msw.msw_model import EnsembleModel, animate_evolution_from_history
+from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.msw.observation_generation import ObservationGenerator
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 global_config = settings.global_config

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from core.settings import load_settings
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 loss_config = settings.loss_config

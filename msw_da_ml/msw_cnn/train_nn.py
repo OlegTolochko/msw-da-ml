@@ -1,20 +1,17 @@
 import os
 from datetime import datetime
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 from sklearn.model_selection import train_test_split
 import numpy as np
-from data.msw_data_generation import DataGenerationPipeline, DataGenerationState
 from typer import Typer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from core.settings import load_settings
-from models.network import CNNModel
-from training.losses import RMSEBiasLoss
+from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
+from msw_da_ml.settings import load_settings
+from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
 
 
 app = Typer()

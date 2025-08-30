@@ -1,17 +1,14 @@
 import os
 from datetime import datetime
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 from typer import Typer
 from tqdm import tqdm
 
-from core.settings import load_settings
-from quantile_network import QuantileCNNModel
-from quantile_losses import pinball_loss
-from training.train_nn import get_train_val_loaders
+from msw_da_ml.settings import load_settings
+from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
+from msw_da_ml.conformal_quantile_regression.cqr_losses import pinball_loss
+from msw_da_ml.msw_cnn.train_nn import get_train_val_loaders
 
 
 app = Typer()

@@ -1,15 +1,12 @@
 import os
-import sys
 import copy
 
 import torch
 import numpy as np
 from typer import Typer
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from quantile_regression.quantile_network import QuantileCNNModel
-from core.settings import load_settings
+from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
+from msw_da_ml.settings import load_settings
 
 app = Typer()
 
@@ -71,22 +68,3 @@ def load_normalization(load_model_name: str, device):
     return norm_stats
 
 
-def load_trained_model(load_model_name: str, device):
-    if not load_model_name:
-        load_model_name = get_most_recent_model_name()
-        if not load_model_name:
-            raise FileNotFoundError("No model files found")
-
-    if not load_model_name.endswith(".pth"):
-        load_model_name += ".pth"
-
-    model_load_path = f"{trained_quantile_nn_model_path}{load_model_name}"
-
-    model = QuantileCNNModel()
-    state_dict = torch.load(model_load_path, map_location=device)
-    model.load_state_dict(state_dict, strict=True)
-    print("Model weights loaded successfully.")
-    model.to(device)
-    model.eval()
-
-    return model, load_model_name

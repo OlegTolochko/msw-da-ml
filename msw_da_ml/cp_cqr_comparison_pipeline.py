@@ -2,21 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
-import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from data.experiment_data_generation import load_histories as load_cp_histories
-from quantile_regression.quantile_experiment_data_generation import (
+from msw_da_ml.conformal_prediction.cp_data_generation import load_histories as load_cp_histories
+from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
     load_histories as load_qr_histories,
 )
-from analysis.conformal_prediction import calibrate, check_coverage
-from quantile_regression.quantile_conformal_prediction import (
+from msw_da_ml.conformal_prediction.conformal_prediction import calibrate, check_coverage
+from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     calibrate_quantile_intervals_symmetric,
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
-from core.settings import load_settings
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 config = settings.conformal_prediction_config

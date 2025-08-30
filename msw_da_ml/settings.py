@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
+from pathlib import Path
 
 
 class WaterModelConfig(BaseModel):
@@ -111,7 +112,10 @@ class AppSettings(BaseModel):
     global_config: GlobalConfig
 
 
-def load_settings(path: str = "config.yaml") -> AppSettings:
+def load_settings(path: str = None) -> AppSettings:
+    if path is None:
+        settings_dir = Path(__file__).parent
+        path = settings_dir / "config.yaml"
     with open(path, "r") as f:
         config_data = yaml.safe_load(f)
     return AppSettings.model_validate(config_data)

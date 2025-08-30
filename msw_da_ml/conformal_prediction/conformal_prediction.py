@@ -3,12 +3,9 @@ from sklearn.model_selection import train_test_split
 from typer import Typer
 import matplotlib.pyplot as plt
 import os
-import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from data.experiment_data_generation import load_histories
-from core.settings import load_settings
+from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
+from msw_da_ml.settings import load_settings
 
 app = Typer()
 

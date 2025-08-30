@@ -1,12 +1,8 @@
 from abc import ABC, abstractmethod
 from joblib import Parallel, delayed
-import os
-import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
-from core.settings import load_settings
+from msw_da_ml.settings import load_settings
 import cvxopt
 
 settings = load_settings()
