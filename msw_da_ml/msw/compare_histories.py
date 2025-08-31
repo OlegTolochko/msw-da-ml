@@ -19,6 +19,10 @@ class ModelComparatorVisualizer:
     def __init__(
         self, history1: list, history2: list, model1_name="CNN", model2_name="Truth"
     ):
+        """
+        Pipeline which compares two given histories with eachother along the timestep domain.
+        The input must be a list over N timesteps with shape (N, num_gridpoints, 3, num_ensemble_members)
+        """
         self.hist1 = history1
         self.hist2 = history2
         self.name1 = model1_name
@@ -203,7 +207,7 @@ class ModelComparatorVisualizer:
     def animate(self, save_name: str):
         save_name = save_name.removesuffix(".pth")
 
-        save_path = f"{visualization_path}{save_name}_{self.name1}_vs_{self.name2}_{len(self.hist1)}.mp4"
+        save_path = f"{visualization_path}/{save_name}_{self.name1}_vs_{self.name2}_{len(self.hist1)}.mp4"
         anim = FuncAnimation(
             self.fig,
             self._update,

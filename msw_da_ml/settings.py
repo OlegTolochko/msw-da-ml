@@ -65,7 +65,6 @@ class TrainingConfig(BaseModel):
     batch_size: int
     learning_rate: float
     epochs: int
-    model_save_name: str
 
 
 class InferenceConfig(BaseModel):

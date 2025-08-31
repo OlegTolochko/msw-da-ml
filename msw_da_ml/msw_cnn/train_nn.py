@@ -95,7 +95,7 @@ def get_train_val_loaders(
     std_in[std_in < eps] = 1.0
     std_out[std_out < eps] = 1.0
 
-    stats_path = os.path.join(normalization_path, f"{model_name}.pt")
+    stats_path = os.path.join(normalization_path, f"norm_{model_name}.pt")
     torch.save(
         {
             "mean_in": mean_in,
@@ -132,7 +132,7 @@ def get_train_val_loaders(
 
 
 @app.command()
-def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
+def train_nn(generated_training_data_name: str, include_timestamp_in_name: bool = True):
     """
     Traines the CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
@@ -151,7 +151,7 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
     model = CNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        pipeline_state_name, device, model_name, normalization_path=normalization_path
+        generated_training_data_name, device, model_name, normalization_path=normalization_path
     )
 
     criterion = RMSEBiasLoss()

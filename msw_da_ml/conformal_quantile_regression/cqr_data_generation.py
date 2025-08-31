@@ -7,9 +7,8 @@ import datetime
 import torch
 import numpy as np
 
-from msw_da_ml.conformal_quantile_regression.cqr_inference import (
-    load_normalization,
-    load_trained_model,
+from msw_da_ml.conformal_quantile_regression.cqr_inference_helper import (
+    load_cqr_trained_model,
 )
 from msw_da_ml.msw.msw_model import EnsembleModel
 from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
@@ -42,10 +41,9 @@ class ExperimentPipeline:
             if torch.backends.mps.is_available()
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        self.model, self.loaded_model_name = load_trained_model(
+        self.model, self.norm_stats = load_cqr_trained_model(
             load_model_name, self.device
         )
-        self.norm_stats = load_normalization(self.loaded_model_name, self.device)
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
@@ -188,7 +186,7 @@ def save_histories(
     loaded_model_name: str,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"quantile_hist_{loaded_model_name}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    save_name = f"quantile_hist_{str.removesuffix(loaded_model_name, ".pth")}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = f"{experiments_path}{save_name}"
     save_data = {}
 

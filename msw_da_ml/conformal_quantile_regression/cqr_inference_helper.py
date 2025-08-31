@@ -17,7 +17,7 @@ trained_quantile_nn_model_path = get_output_dir(settings.global_config.trained_q
 quantile_normalization_path = get_output_dir(settings.global_config.quantile_normalization_out_filename)
 
 
-def get_most_recent_model_name():
+def get_most_recent_cqr_model_name():
     most_recent_model = None
     most_recent_time = 0
     for model in os.scandir(trained_quantile_nn_model_path):
@@ -29,9 +29,9 @@ def get_most_recent_model_name():
     return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
-def load_trained_model(load_model_name: str, device):
+def load_cqr_trained_model(load_model_name: str, device):
     if not load_model_name:
-        load_model_name = get_most_recent_model_name()
+        load_model_name = get_most_recent_cqr_model_name()
         if not load_model_name:
             raise FileNotFoundError("No model files found")
 
@@ -47,13 +47,9 @@ def load_trained_model(load_model_name: str, device):
     model.to(device)
     model.eval()
 
-    return model, load_model_name
+    load_normalization_name = load_model_name.removesuffix(".pth")
+    norm_stats_path = os.path.join(quantile_normalization_path, f"norm_{load_normalization_name}.pt")
+    norm_stats = torch.load(norm_stats_path, map_location=device)
 
-
-def load_normalization(load_model_name: str, device):
-    load_model_name = load_model_name.removesuffix(".pth")
-    stats_path = os.path.join(quantile_normalization_path, f"{load_model_name}.pt")
-    norm_stats = torch.load(stats_path, map_location=device)
-    return norm_stats
-
+    return model, norm_stats
 

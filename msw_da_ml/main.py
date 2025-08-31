@@ -42,9 +42,9 @@ def generate_training_data(
     pipeline.run(num_steps=num_steps, pipeline_state_save_name=save_name)
 
 def train_cnn_model(
-    generated_data_name: str
-):  
-    train_nn(generated_data_name)
+    generated_msw_data_name: str
+):   
+    train_nn(generated_msw_data_name)
 
 def train_quantile_regression_cnn_model():    
     pass

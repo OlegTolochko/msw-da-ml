@@ -38,8 +38,13 @@ class DataGenerationPipeline:
         num_steps: int,
         generate_evolution_animations: bool = True,
         save_data: bool = True,
-        pipeline_state_save_name: str = "pipeline_state",
+        pipeline_state_save_name: str = "cnn_training_data",
     ):
+        """
+        Generates Truth, QPEns and EnKF data history.
+        This data may be used for verifying or testing different msw model configurations.
+        The main utility for the generated data is as training data for the CNN.
+        """
         model_truth = EnsembleModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
         )
@@ -122,6 +127,10 @@ class DataGenerationPipeline:
 
     def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
+        # This part may be adjusted. For propagation to the next EnKF state, we take
+        # the previous QPEns state. We do this since this data is used for model training.
+        # In each CNN adjustment we assume that the previous state is a QPEns adjusted state,
+        # since the CNN is supposed to mimic the QPEns behavior.
         ensemble_state_kf = state.models["ensemble_qp"].get_state().copy()
         ensemble_state_qp = state.models["ensemble_qp"].get_state().copy()
 
