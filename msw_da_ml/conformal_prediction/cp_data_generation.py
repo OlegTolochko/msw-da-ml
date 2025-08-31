@@ -7,7 +7,7 @@ from datetime import datetime
 import torch
 import numpy as np
 
-from msw_da_ml.msw_cnn.inference import load_normalization, load_trained_model
+from msw_da_ml.msw_cnn.inference import load_trained_model
 from msw_da_ml.msw.msw_model import EnsembleModel
 from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
@@ -41,10 +41,9 @@ class ExperimentPipeline:
             if torch.backends.mps.is_available()
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        self.model, self.loaded_model_name = load_trained_model(
+        self.model, self.norm_stats = load_trained_model(
             load_model_name, self.device
         )
-        self.norm_stats = load_normalization(self.loaded_model_name, self.device)
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
@@ -225,7 +224,7 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
 
 def generate_experiment_data(model_name: str = ""):
-    histories, loaded_model_name = run_pipeline(model_name)
+    histories  = run_pipeline(model_name)
     save_histories(histories)
 
     print(f"Generated {len(histories)} experiment histories")
