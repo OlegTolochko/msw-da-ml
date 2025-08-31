@@ -6,17 +6,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from msw_da_ml.conformal_prediction.cp_data_generation import ExperimentHistory
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-experiments_path = (
-    f"{global_config.out_path}{global_config.experiment_histories_out_filename}"
-)
-os.makedirs(experiments_path, exist_ok=True)
+experiments_path = get_output_dir(global_config.experiment_histories_out_filename)
 
 
 def uhr_rmse_comparison(histories: List[ExperimentHistory]):
@@ -154,8 +151,9 @@ def uhr_rmse_comparison(histories: List[ExperimentHistory]):
 
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    viz_dir = get_output_dir(global_config.visualizations_out_filename)
     plt.savefig(
-        f"{global_config.out_path}{global_config.visualizations_out_filename}/{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}_rmse_comparison.png",
+        f"{viz_dir}/{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}_rmse_comparison.png",
         dpi=300,
         bbox_inches="tight",
     )

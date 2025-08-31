@@ -5,7 +5,7 @@ import torch
 from typer import Typer
 from tqdm import tqdm
 
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
 from msw_da_ml.conformal_quantile_regression.cqr_losses import pinball_loss
 from msw_da_ml.msw_cnn.train_nn import get_train_val_loaders
@@ -16,21 +16,8 @@ app = Typer()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_quantile_nn_model_out_filename = (
-    settings.global_config.trained_quantile_nn_model_out_filename
-)
-trained_quantile_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_quantile_nn_model_out_filename}"
-)
-os.makedirs(trained_quantile_nn_model_path, exist_ok=True)
-
-quantile_normalization_out_filename = (
-    settings.global_config.quantile_normalization_out_filename
-)
-quantile_normalization_path = (
-    f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
-)
-os.makedirs(quantile_normalization_path, exist_ok=True)
+trained_quantile_nn_model_path = get_output_dir(settings.global_config.trained_quantile_nn_model_out_filename)
+quantile_normalization_path = get_output_dir(settings.global_config.quantile_normalization_out_filename)
 
 
 @app.command()

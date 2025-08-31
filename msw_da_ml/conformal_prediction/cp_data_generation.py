@@ -12,17 +12,14 @@ from msw_da_ml.msw.msw_model import EnsembleModel
 from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.random_manager import RandomGenerators
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-experiments_path = (
-    f"{global_config.out_path}{global_config.experiment_histories_out_filename}"
-)
-os.makedirs(experiments_path, exist_ok=True)
+experiments_path = get_output_dir(global_config.experiment_histories_out_filename)
 
 
 @dataclass

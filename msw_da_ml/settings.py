@@ -119,3 +119,30 @@ def load_settings(path: str = None) -> AppSettings:
     with open(path, "r") as f:
         config_data = yaml.safe_load(f)
     return AppSettings.model_validate(config_data)
+
+
+def get_output_dir(subdir: str = "") -> Path:
+    """Get the absolute output directory path.
+
+    Args:
+        subdir: Optional subdirectory within the output directory
+
+    Returns:
+        Path object pointing to the output directory
+    """
+    current_file = Path(__file__)
+    # The location may be adjusted if wanted
+    project_root = current_file.parent.parent
+
+    settings = load_settings()
+    base_out = Path(settings.global_config.out_path)
+
+    if not base_out.is_absolute():
+        base_out = project_root / base_out
+
+    if subdir:
+        base_out = base_out / subdir
+
+    base_out.mkdir(parents=True, exist_ok=True)
+
+    return base_out

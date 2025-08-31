@@ -6,7 +6,7 @@ import numpy as np
 from typer import Typer
 
 from msw_da_ml.msw_cnn.network import CNNModel
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.msw_model import EnsembleModel
@@ -18,13 +18,8 @@ app = Typer()
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
-trained_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
-)
-
-normalization_out_filename = settings.global_config.normalization_out_filename
-normalization_path = f"{settings.global_config.out_path}{normalization_out_filename}"
+trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
 def get_most_recent_model_name():

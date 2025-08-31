@@ -7,15 +7,12 @@ from matplotlib.animation import FuncAnimation
 import numpy as np
 from matplotlib.patches import Rectangle
 
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 global_config = settings.global_config
 
-visualization_path = (
-    f"{global_config.out_path}{global_config.visualizations_out_filename}"
-)
-os.makedirs(visualization_path, exist_ok=True)
+visualization_path = get_output_dir(global_config.visualizations_out_filename)
 
 
 class ModelComparatorVisualizer:

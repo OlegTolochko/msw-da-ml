@@ -13,13 +13,12 @@ from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 config = settings.conformal_prediction_config
 global_config = settings.global_config
-viz_dir = f"{global_config.out_path}{global_config.visualizations_out_filename}"
-os.makedirs(viz_dir, exist_ok=True)
+viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 def generate_comparison_analysis(

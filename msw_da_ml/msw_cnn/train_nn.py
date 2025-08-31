@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw_cnn.network import CNNModel
 from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
 
@@ -19,15 +19,8 @@ app = Typer()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
-trained_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
-)
-os.makedirs(trained_nn_model_path, exist_ok=True)
-
-normalization_out_filename = settings.global_config.normalization_out_filename
-normalization_path = f"{settings.global_config.out_path}{normalization_out_filename}"
-os.makedirs(normalization_path, exist_ok=True)
+trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
 @app.command()

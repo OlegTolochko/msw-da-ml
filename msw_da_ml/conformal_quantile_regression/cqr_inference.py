@@ -6,26 +6,15 @@ import numpy as np
 from typer import Typer
 
 from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 app = Typer()
 
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_quantile_nn_model_out_filename = (
-    settings.global_config.trained_quantile_nn_model_out_filename
-)
-trained_quantile_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_quantile_nn_model_out_filename}"
-)
-
-quantile_normalization_out_filename = (
-    settings.global_config.quantile_normalization_out_filename
-)
-quantile_normalization_path = (
-    f"{settings.global_config.out_path}{quantile_normalization_out_filename}"
-)
+trained_quantile_nn_model_path = get_output_dir(settings.global_config.trained_quantile_nn_model_out_filename)
+quantile_normalization_path = get_output_dir(settings.global_config.quantile_normalization_out_filename)
 
 
 def get_most_recent_model_name():

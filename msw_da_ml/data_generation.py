@@ -3,7 +3,7 @@ import os
 from typer import Typer
 
 from msw_da_ml.msw.random_manager import RandomGenerators
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
 from msw_da_ml.conformal_prediction.cp_data_generation import generate_experiment_data
 
@@ -11,7 +11,8 @@ from msw_da_ml.conformal_prediction.cp_data_generation import generate_experimen
 app = Typer()
 settings = load_settings()
 rngs = RandomGenerators.from_seed(base_seed=settings.global_config.base_seed)
-os.makedirs(settings.global_config.out_path, exist_ok=True)
+# Ensure output directory exists
+get_output_dir()
 
 
 @app.command()

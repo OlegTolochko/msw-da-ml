@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import os
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 app = Typer()
 
@@ -13,8 +13,7 @@ settings = load_settings()
 config = settings.conformal_prediction_config
 global_config = settings.global_config
 
-viz_dir = f"{global_config.out_path}{global_config.visualizations_out_filename}"
-os.makedirs(viz_dir, exist_ok=True)
+viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 @app.command()

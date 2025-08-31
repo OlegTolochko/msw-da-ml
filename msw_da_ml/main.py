@@ -3,7 +3,7 @@ import os
 
 import cyclopts
 
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
 from msw_da_ml.msw_cnn.train_nn import train_nn
@@ -13,8 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 settings = load_settings()
 global_config = settings.global_config
 
-OUT_DIR = PROJECT_ROOT / global_config.out_path
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR = get_output_dir()
 
 rngs = RandomGenerators.from_seed(base_seed=settings.global_config.base_seed)
 
@@ -44,7 +43,7 @@ def generate_training_data(
 
 def train_cnn_model(
     generated_data_name: str
-):
+):  
     train_nn(generated_data_name)
 
 def train_quantile_regression_cnn_model():    

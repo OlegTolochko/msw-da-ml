@@ -11,12 +11,11 @@ import tqdm
 from msw_da_ml.msw.msw_model import EnsembleModel, animate_evolution_from_history
 from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
-from msw_da_ml.settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 global_config = settings.global_config
-state_path = f"{global_config.out_path}{global_config.msw_model_out_filename}"
-os.makedirs(state_path, exist_ok=True)
+state_path = get_output_dir(global_config.msw_model_out_filename)
 
 
 @dataclass
@@ -149,11 +148,13 @@ class DataGenerationPipeline:
 
     def _generate_animations(self, state: DataGenerationState):
         """Generate output animations"""
+        kf_animation_path = get_output_dir("model_evolution_kf.mp4")
+        qp_animation_path = get_output_dir("model_evolution_qp.mp4")
         animate_evolution_from_history(
-            state.histories["kf"], "./out/model_evolution_kf.mp4"
+            state.histories["kf"], str(kf_animation_path)
         )
         animate_evolution_from_history(
-            state.histories["qp"], "./out/model_evolution_qp.mp4"
+            state.histories["qp"], str(qp_animation_path)
         )
         state_history_truth = state.models["truth"].get_history()
         animate_evolution_from_history(state_history_truth)
