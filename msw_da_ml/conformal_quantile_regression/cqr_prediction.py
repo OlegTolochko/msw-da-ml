@@ -1,13 +1,13 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
-from typer import Typer
+from cyclopts import App
 import matplotlib.pyplot as plt
 import os
 
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 config = settings.conformal_prediction_config

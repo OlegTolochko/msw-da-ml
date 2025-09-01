@@ -1,6 +1,6 @@
 import os
 
-from typer import Typer
+from cyclopts import App
 
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -8,7 +8,7 @@ from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
 from msw_da_ml.conformal_prediction.cp_data_generation import generate_experiment_data
 
 
-app = Typer()
+app = App()
 settings = load_settings()
 rngs = RandomGenerators.from_seed(base_seed=settings.global_config.base_seed)
 # Ensure output directory exists

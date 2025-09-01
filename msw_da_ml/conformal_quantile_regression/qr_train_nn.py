@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 import torch
-from typer import Typer
+from cyclopts import App
 from tqdm import tqdm
 
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -11,7 +11,7 @@ from msw_da_ml.conformal_quantile_regression.cqr_losses import pinball_loss
 from msw_da_ml.msw_cnn.train_nn import get_train_val_loaders
 
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 training_config = settings.training_config

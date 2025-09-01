@@ -1,13 +1,12 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
-from typer import Typer
+from cyclopts import App
 import matplotlib.pyplot as plt
-import os
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 config = settings.conformal_prediction_config
@@ -17,11 +16,11 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 @app.command()
-def conformal_prediction(hist_name: str, normalize: bool = False):
+def conformal_prediction(cp_hist_name: str, normalize: bool = False):
     """
     Runs conformal prediction pipeline.
     """
-    histories = load_histories(hist_name)
+    histories = load_histories(cp_hist_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])

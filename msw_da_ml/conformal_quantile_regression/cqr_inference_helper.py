@@ -3,12 +3,12 @@ import copy
 
 import torch
 import numpy as np
-from typer import Typer
+from cyclopts import App
 
 from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
 from msw_da_ml.settings import load_settings, get_output_dir
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 inference_config = settings.inference_config

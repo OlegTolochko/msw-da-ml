@@ -4,7 +4,7 @@ from datetime import datetime
 import torch
 from sklearn.model_selection import train_test_split
 import numpy as np
-from typer import Typer
+from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
@@ -14,7 +14,7 @@ from msw_da_ml.msw_cnn.network import CNNModel
 from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
 
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 training_config = settings.training_config
