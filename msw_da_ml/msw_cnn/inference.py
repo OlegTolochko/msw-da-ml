@@ -50,7 +50,7 @@ def load_trained_model(load_model_name: str = "", device: str = "cuda"):
     if not load_model_name.endswith(".pth"):
         load_model_name += ".pth"
 
-    model_load_path = f"{trained_nn_model_path}/{load_model_name}"
+    model_load_path = os.path.join(trained_nn_model_path, load_model_name)
 
     model = CNNModel()
     state_dict = torch.load(model_load_path, map_location=device)

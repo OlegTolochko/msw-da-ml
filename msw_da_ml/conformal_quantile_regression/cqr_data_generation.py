@@ -187,7 +187,7 @@ def save_histories(
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = f"quantile_hist_{str.removesuffix(loaded_model_name, ".pth")}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
-    save_path = f"{experiments_path}{save_name}"
+    save_path = os.path.join(experiments_path, save_name)
     save_data = {}
 
     for i, hist in enumerate(histories):
@@ -213,7 +213,7 @@ def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
     if not load_name.endswith(".npz"):
         load_name += ".npz"
 
-    load_path = f"{experiments_path}{load_name}"
+    load_path = os.path.join(experiments_path, load_name)
     data = np.load(load_path)
     num_experiments = int(data["num_experiments"])
 

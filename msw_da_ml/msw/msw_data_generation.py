@@ -83,7 +83,7 @@ class DataGenerationPipeline:
     def _save_pipeline_state(
         self, state: DataGenerationState, pipeline_state_name: str
     ):
-        save_path = f"{state_path}{pipeline_state_name}"
+        save_path = os.path.join(state_path, pipeline_state_name)
 
         if not pipeline_state_name.endswith(".pkl"):
             save_path += ".pkl"
@@ -96,7 +96,7 @@ class DataGenerationPipeline:
 
     @staticmethod
     def load_pipeline_state(pipeline_state_name: str) -> DataGenerationState:
-        load_path = f"{state_path}{pipeline_state_name}"
+        load_path = os.path.join(state_path, pipeline_state_name)
 
         if not pipeline_state_name.endswith(".pkl"):
             load_path += ".pkl"
