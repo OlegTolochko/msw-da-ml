@@ -12,6 +12,8 @@ from msw_da_ml.msw_cnn.inference import inference, get_most_recent_model_name
 from msw_da_ml.conformal_prediction.cp_data_generation import generate_experiment_data as generate_cp_experiment_data
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import generate_experiment_data_qr as generate_cqr_experiment_data
 from msw_da_ml.cp_cqr_comparison_pipeline import generate_comparison_analysis
+from msw_da_ml.conformal_prediction.conformal_prediction import conformal_prediction
+from msw_da_ml.conformal_quantile_regression.cqr_prediction import cqr_prediction
 
 settings = load_settings()
 global_config = settings.global_config
@@ -26,7 +28,7 @@ def generate_training_data(
     num_steps: int = 20,
     save_name: str = "trainig_data"
 ):
-    """Generates Training data for CNN.
+    """Generates Training data for CNN and CQR CNN.
 
     Parameters
     ----------
@@ -125,6 +127,32 @@ def generate_cqr_data(
         Name of the quantile regression model to use for experiments.
     """
     generate_cqr_experiment_data(load_model_name)
+
+
+@app.command()
+def run_conformal_prediction(cp_hist_name: str, normalize: bool = False):
+    """Runs conformal prediction analysis on experimental data.
+
+    Parameters
+    ----------
+    cp_hist_name: str
+        Name of the conformal prediction experiment data file.
+    normalize: bool
+        Whether to use normalized conformal prediction.
+    """
+    conformal_prediction(cp_hist_name, normalize)
+
+
+@app.command()
+def run_cqr_prediction(cqr_hist_name: str):
+    """Runs conformalized quantile regression analysis on experimental data.
+
+    Parameters
+    ----------
+    cqr_hist_name: str
+        Name of the CQR experiment data file.
+    """
+    cqr_prediction(cqr_hist_name)
 
 
 @app.command()
