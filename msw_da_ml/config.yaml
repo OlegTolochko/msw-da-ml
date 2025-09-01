@@ -57,23 +57,31 @@ training_config:
   batch_size: 32
   learning_rate: 0.001
   epochs: 100
-  model_save_name: model
-
+  
 inference_config:
   inference_seed: 43 # difference seed, to ensure different setting
   num_ensemble_members: 10
 
 experiment_config:
   base_seed: 43
-  num_seeds: 10
+  num_seeds: 2
   num_inference_steps: 200
   num_ensemble_members: 10
 
+conformal_prediction_config:
+  calibration_split_ratio: 0.5 # percentage of samples/random seeds to be utilized in calibration
+  calibration_split_seed: 42
+  calibration_quantile: 0.9 # calibration quantile, theoretical guarantee
+  rain_normalization_eps: 1.0 # epsilon to be added to rain during normalization
+
 global_config:
   out_path: ./out/
-  animation_out_filename: animation/
+  visualizations_out_filename: visualizations/
   msw_model_out_filename: msw_models/
   trained_nn_model_out_filename: trained_nn_models/
   normalization_out_filename: normalization_stats/
   experiment_histories_out_filename: experiment_histories/
+  trained_quantile_nn_model_out_filename: trained_quantile_nn_models/
+  quantile_normalization_out_filename: quantile_normalization_stats/
+  quantile_experiment_histories_out_filename: quantile_experiment_histories/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

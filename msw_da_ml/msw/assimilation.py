@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from joblib import Parallel, delayed
 
 import numpy as np
-from settings import load_settings
+from msw_da_ml.settings import load_settings
 import cvxopt
 
 settings = load_settings()

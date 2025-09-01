@@ -4,30 +4,23 @@ from datetime import datetime
 import torch
 from sklearn.model_selection import train_test_split
 import numpy as np
-from data_generation_pipeline import DataGenerationPipeline, DataGenerationState
-from typer import Typer
+from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from settings import load_settings
-from network import CNNModel
-from losses import RMSEBiasLoss
+from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
+from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
 
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 training_config = settings.training_config
 
-trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
-trained_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
-)
-os.makedirs(trained_nn_model_path, exist_ok=True)
-
-normalization_out_filename = settings.global_config.normalization_out_filename
-normalization_path = f"{settings.global_config.out_path}{normalization_out_filename}"
-os.makedirs(normalization_path, exist_ok=True)
+trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
 @app.command()
@@ -40,7 +33,9 @@ def load_generated_data(pipeline_state_name: str):
 
 
 @app.command()
-def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str):
+def get_train_val_loaders(
+    pipeline_state_name: str, device: str, model_name: str, normalization_path: str
+):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
@@ -100,7 +95,7 @@ def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str
     std_in[std_in < eps] = 1.0
     std_out[std_out < eps] = 1.0
 
-    stats_path = os.path.join(normalization_path, f"{model_name}.pt")
+    stats_path = os.path.join(normalization_path, f"norm_{model_name}.pt")
     torch.save(
         {
             "mean_in": mean_in,
@@ -137,7 +132,7 @@ def get_train_val_loaders(pipeline_state_name: str, device: str, model_name: str
 
 
 @app.command()
-def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
+def train_nn(generated_training_data_name: str, include_timestamp_in_name: bool = True):
     """
     Traines the CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
@@ -151,12 +146,12 @@ def train_nn(pipeline_state_name: str, include_timestamp_in_name: bool = True):
     model_name = f"{training_config.model_save_name}"
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-        model_name += f"-{timestamp}"
+        model_name += f"_{timestamp}"
 
     model = CNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        pipeline_state_name, device, model_name
+        generated_training_data_name, device, model_name, normalization_path=normalization_path
     )
 
     criterion = RMSEBiasLoss()

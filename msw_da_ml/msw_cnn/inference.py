@@ -3,29 +3,24 @@ import copy
 
 import torch
 import numpy as np
-from typer import Typer
+from cyclopts import App 
 
-from network import CNNModel
-from settings import load_settings
-from assimilation import EnsembleKalmanFilter, QPEnsemble
-from observation_generation import ObservationGenerator
-from msw_model import EnsembleModel
-from random_manager import RandomGenerators
-from visualization import ModelComparatorVisualizer
-from data_generation_pipeline import DataGenerationPipeline
+from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.msw.observation_generation import ObservationGenerator
+from msw_da_ml.msw.msw_model import EnsembleModel
+from msw_da_ml.msw.random_manager import RandomGenerators
+from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.msw.compare_histories import ModelComparatorVisualizer
 
-app = Typer()
+app = App()
 
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_nn_model_out_filename = settings.global_config.trained_nn_model_out_filename
-trained_nn_model_path = (
-    f"{settings.global_config.out_path}{trained_nn_model_out_filename}"
-)
-
-normalization_out_filename = settings.global_config.normalization_out_filename
-normalization_path = f"{settings.global_config.out_path}{normalization_out_filename}"
+trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
 def get_most_recent_model_name():
@@ -40,7 +35,13 @@ def get_most_recent_model_name():
     return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
-def load_trained_model(load_model_name: str, device):
+def load_trained_model(load_model_name: str = "", device: str = "cuda"):
+    """
+    loads a trained cnn model. 
+    If no name is provided the latest trained model is loaded.
+
+    Return
+    """
     if not load_model_name:
         load_model_name = get_most_recent_model_name()
         if not load_model_name:
@@ -49,7 +50,7 @@ def load_trained_model(load_model_name: str, device):
     if not load_model_name.endswith(".pth"):
         load_model_name += ".pth"
 
-    model_load_path = f"{trained_nn_model_path}{load_model_name}"
+    model_load_path = os.path.join(trained_nn_model_path, load_model_name)
 
     model = CNNModel()
     state_dict = torch.load(model_load_path, map_location=device)
@@ -58,28 +59,31 @@ def load_trained_model(load_model_name: str, device):
     model.to(device)
     model.eval()
 
-    return model, load_model_name
+    load_normalization_name = f"norm_{load_model_name.removesuffix(".pth")}"
+    norm_stats_path = os.path.join(normalization_path, f"{load_normalization_name}.pt")
+    norm_stats = torch.load(norm_stats_path, map_location=device)
 
-
-def load_normalization(load_model_name: str, device):
-    load_model_name = load_model_name.removesuffix(".pth")
-    stats_path = os.path.join(normalization_path, f"{load_model_name}.pt")
-    norm_stats = torch.load(stats_path, map_location=device)
-    return norm_stats
+    return model, norm_stats
 
 
 @app.command()
 def inference(
     num_inference_steps: int, load_model_name: str = "", compute_qpens: bool = True
 ):
+    """
+    Runs inference for a chosen cnn model for num_inference_steps inference steps and 
+    generates a video visualization of the Truth vs CNN and optionally computes additional 
+    QPEns predictions and visualizes QPEns vs CNN.
+
+    If no load_model_name is provided, the latest trained model is loaded automatically.
+    """
     device = (
         "mps"
         if torch.backends.mps.is_available()
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    model, load_model_name = load_trained_model(load_model_name, device)
+    model, norm_stats = load_trained_model(load_model_name, device)
 
-    norm_stats = load_normalization(load_model_name, device)
     mean_in = norm_stats["mean_in"]
     std_in = norm_stats["std_in"]
     mean_out = norm_stats["mean_out"]
@@ -148,19 +152,15 @@ def inference(
 
         ensemble_model.assimilate(corrected_state)
 
-    visualize_update_performance(ensemble_model, truth_model, load_model_name)
+    visualize_update_performance(ensemble_model, truth_model, load_model_name, "CNN", "Truth")
     if compute_qpens:
         visualize_update_performance(
             ensemble_model, qpens_model, load_model_name, "CNN", "QPEns"
         )
 
 
-def compare_models():
-    pass
-
-
 @app.command()
-def visualize_from_model(model_name: str = "pipeline_state.pkl"):
+def visualize_from_model(model_name: str):
     data = DataGenerationPipeline.load_pipeline_state(pipeline_state_name=model_name)
 
     truth_model = data.models["truth"]
@@ -172,13 +172,15 @@ def visualize_update_performance(
     cnn_model: EnsembleModel,
     truth_model: EnsembleModel,
     trained_model_name: str,
-    model_name1: str = "CNN",
-    model_name2: str = "Truth",
+    model_name1: str,
+    model_name2: str
 ):
+    """
+    Visualization of two EnsembleModels.
+    The histories should be generated based on the same Truth.
+    """
     cnn_history = cnn_model.get_history()
     truth_history = truth_model.get_history()
-    print(len(cnn_history))
-    print(len(truth_history))
     min_len = min(len(cnn_history), len(truth_history))
 
     visualizer = ModelComparatorVisualizer(

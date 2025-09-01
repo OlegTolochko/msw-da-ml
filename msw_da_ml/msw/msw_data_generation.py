@@ -8,15 +8,14 @@ from pathlib import Path
 
 import tqdm
 
-from msw_model import EnsembleModel, animate_evolution_from_history
-from assimilation import EnsembleKalmanFilter, QPEnsemble
-from observation_generation import ObservationGenerator
-from settings import load_settings
+from msw_da_ml.msw.msw_model import EnsembleModel, animate_evolution_from_history
+from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.msw.observation_generation import ObservationGenerator
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 global_config = settings.global_config
-state_path = f"{global_config.out_path}{global_config.msw_model_out_filename}"
-os.makedirs(state_path, exist_ok=True)
+state_path = get_output_dir(global_config.msw_model_out_filename)
 
 
 @dataclass
@@ -39,8 +38,13 @@ class DataGenerationPipeline:
         num_steps: int,
         generate_evolution_animations: bool = True,
         save_data: bool = True,
-        pipeline_state_save_name: str = "pipeline_state",
+        pipeline_state_save_name: str = "cnn_training_data",
     ):
+        """
+        Generates Truth, QPEns and EnKF data history.
+        This data may be used for verifying or testing different msw model configurations.
+        The main utility for the generated data is as training data for the CNN.
+        """
         model_truth = EnsembleModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
         )
@@ -79,7 +83,7 @@ class DataGenerationPipeline:
     def _save_pipeline_state(
         self, state: DataGenerationState, pipeline_state_name: str
     ):
-        save_path = f"{state_path}{pipeline_state_name}"
+        save_path = os.path.join(state_path, pipeline_state_name)
 
         if not pipeline_state_name.endswith(".pkl"):
             save_path += ".pkl"
@@ -92,11 +96,12 @@ class DataGenerationPipeline:
 
     @staticmethod
     def load_pipeline_state(pipeline_state_name: str) -> DataGenerationState:
-        load_path = f"{state_path}{pipeline_state_name}"
+        load_path = os.path.join(state_path, pipeline_state_name)
 
         if not pipeline_state_name.endswith(".pkl"):
             load_path += ".pkl"
 
+        print(load_path)
         with open(load_path, "rb") as f:
             state = pickle.load(f)
         print(f"Pipeline state loaded from: {load_path}")
@@ -122,6 +127,10 @@ class DataGenerationPipeline:
 
     def _assimilate_and_forecast(self, state: DataGenerationState):
         """Step 3: Assimilate and forecast ensemble models"""
+        # This part may be adjusted. For propagation to the next EnKF state, we take
+        # the previous QPEns state. We do this since this data is used for model training.
+        # In each CNN adjustment we assume that the previous state is a QPEns adjusted state,
+        # since the CNN is supposed to mimic the QPEns behavior.
         ensemble_state_kf = state.models["ensemble_qp"].get_state().copy()
         ensemble_state_qp = state.models["ensemble_qp"].get_state().copy()
 
@@ -148,11 +157,13 @@ class DataGenerationPipeline:
 
     def _generate_animations(self, state: DataGenerationState):
         """Generate output animations"""
+        kf_animation_path = get_output_dir("model_evolution_kf.mp4")
+        qp_animation_path = get_output_dir("model_evolution_qp.mp4")
         animate_evolution_from_history(
-            state.histories["kf"], "./out/model_evolution_kf.mp4"
+            state.histories["kf"], str(kf_animation_path)
         )
         animate_evolution_from_history(
-            state.histories["qp"], "./out/model_evolution_qp.mp4"
+            state.histories["qp"], str(qp_animation_path)
         )
         state_history_truth = state.models["truth"].get_history()
         animate_evolution_from_history(state_history_truth)

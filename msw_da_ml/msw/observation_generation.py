@@ -2,7 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Tuple
 
-from settings import load_settings
+from msw_da_ml.settings import load_settings
 
 settings = load_settings()
 obs_config = settings.shared_obs_gen_assimilation_config

@@ -1,22 +1,28 @@
 import os
+from typing import List
+import datetime
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np
+from matplotlib.patches import Rectangle
 
-from settings import load_settings
+from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 global_config = settings.global_config
 
-animation_path = f"{global_config.out_path}{global_config.animation_out_filename}"
-os.makedirs(animation_path, exist_ok=True)
+visualization_path = get_output_dir(global_config.visualizations_out_filename)
 
 
 class ModelComparatorVisualizer:
     def __init__(
         self, history1: list, history2: list, model1_name="CNN", model2_name="Truth"
     ):
+        """
+        Pipeline which compares two given histories with eachother along the timestep domain.
+        The input must be a list over N timesteps with shape (N, num_gridpoints, 3, num_ensemble_members)
+        """
         self.hist1 = history1
         self.hist2 = history2
         self.name1 = model1_name
@@ -96,8 +102,6 @@ class ModelComparatorVisualizer:
         self.stats_ax.set_xlim(0, 1)
         self.stats_ax.set_ylim(0, 1)
         self.stats_ax.axis("off")
-
-        from matplotlib.patches import Rectangle
 
         bg_rect = Rectangle(
             (0, 0), 1, 1, facecolor="white", edgecolor="gray", alpha=0.9, linewidth=2
@@ -203,7 +207,7 @@ class ModelComparatorVisualizer:
     def animate(self, save_name: str):
         save_name = save_name.removesuffix(".pth")
 
-        save_path = f"{animation_path}{save_name}_{self.name1}_vs_{self.name2}_{len(self.hist1)}.mp4"
+        save_path = f"{visualization_path}/{save_name}_{self.name1}_vs_{self.name2}_{len(self.hist1)}.mp4"
         anim = FuncAnimation(
             self.fig,
             self._update,
