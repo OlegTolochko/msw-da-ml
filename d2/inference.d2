@@ -1,0 +1,32 @@
+inference: {
+  label: "Real-time Inference"
+  style: {
+    fill: "#C6BEE5"
+    border-radius: 8
+    shadow: true
+  }
+
+  Init: "Initialize\n(Truth + EnKF Models + Optionally\nQPEns for performance comparison)"
+
+  Loop: {
+    label: "Main Loop (num_inference_steps)"
+    style: {
+      fill: "#E8CEF0"
+      border-radius: 8
+      shadow: true
+    }
+
+    Forecast: "Propagate Models\n(truth + ensemble)"
+    Observe: "Generate Observations\n(from Truth + Noise)"
+    EnKF: "Assimilate with EnKF"
+    CNN_Correct: "CNN Correction\n(Normalize → Model Inference → Denormalize)"
+  }
+
+  Init -> Loop.Forecast: "initialize()"
+  Loop.Forecast -> Loop.Observe: "propagate()"
+  Loop.Observe -> Loop.EnKF: "generate_observations()"
+  Loop.EnKF -> Loop.CNN_Correct: "assimilate() with EnKF"
+  Loop.CNN_Correct -> Loop.Forecast: "assimilate() corrected state"
+
+  Loop -> Visualize: "Visualize Performance\n(Truth vs CNN, optional QPEns vs CNN)"
+}

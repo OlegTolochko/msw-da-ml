@@ -1,0 +1,71 @@
+overall_pipeline: "Project Pipeline Overview" {
+  style: {
+    fill: "#F0F0F0"
+    border-radius: 8
+  }
+
+  msw_model: {
+    label: "MSW Model"
+    style.fill: "#FFD7A6"
+    Init: "Initialize State"
+    Loop: "Propagation Loop\n(Propagate → Physics Step → Update u,h,r → More Steps?)"
+    Loop -> Assimilate: "Assimilate New State"
+    Loop -> Current: "Current State"
+    Init -> Loop
+  }
+
+  data_generation: {
+    label: "Data Generation Pipeline"
+    style.fill: "#D9EAD3"
+    Init: "Initialize Models\n(Truth + KF + QP)"
+    Loop: "Main Simulation Loop\n(Propagate All → Generate Obs → Assimilate EnKF/QPEns)"
+    Init -> Loop
+    Loop -> Save: "Save Pipeline States"
+  }
+
+  training: {
+    label: "(QR) CNN Training Pipeline"
+    style.fill: "#FFE599"
+    Load: "Load Saved States"
+    Prepare: "Prepare Training Data\n(KF + obs_locations → QP_states)"
+    Train: "Train CNN Model\n(Learn correction: EnKF → QPEns)"
+    Load -> Prepare -> Train
+    Train -> SaveModel: "Save Trained CNN Model"
+  }
+
+  inference: {
+    label: "Real-time Inference"
+    style.fill: "#B4A7E5"
+    Init: "Initialize\n(Truth + EnKF)"
+    Loop: "Main Loop\n(Propagate → Generate Obs → Assimilate EnKF → CNN Correction)"
+    Init -> Loop
+    Loop -> Visualize: "Visualize Performance"
+  }
+
+  history_gen: {
+    label: "History Gen for CP/QR"
+    style.fill: "#FFB3BA"
+    Init: "Initialize Models\n(QPEns, EnKF, CNN)"
+    Loop: "Loop Inference Steps\n(Propagate Models → Generate Obs → Assimilate All)"
+    Init -> Loop
+    Loop -> Collect: "Collect Histories"
+    Collect -> Save: "Save for UQ"
+  }
+
+  uq: {
+    label: "Uncertainty Quantification"
+    style.fill: "#ADD8E6"
+    Load: "Load Histories"
+    Split: "Split Data\n(Calib vs Test)"
+    Calibrate: "Calibrate Quantiles"
+    Apply: "Apply to Test"
+    Check: "Check Coverage"
+    Visualize: "Visualize Results"
+    Load -> Split -> Calibrate -> Apply -> Check -> Visualize
+  }
+
+  msw_model -> data_generation: "Uses MSW"
+  data_generation.Save -> training.Load: "Saved States"
+  training.SaveModel -> inference.Loop: "Trained Model"
+  history_gen.Save -> uq.Load: "Histories for UQ"
+}

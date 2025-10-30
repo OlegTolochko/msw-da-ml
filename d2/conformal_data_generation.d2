@@ -1,0 +1,49 @@
+data_generation: {
+  label: "History Data Generation Pipeline (for CP/CQR/Functionality Verification)"
+  shape: rectangle
+  style: {
+    fill: "#F2B8B8"
+    border-radius: 8
+    shadow: true
+  }
+
+  Init: "Initialize Models\n(Truth, EnKF, QPEns, CNN)"
+
+  Loop: {
+    label: "Loop (num_inference_steps)"
+    shape: rectangle
+    style: {
+      fill: "#B8E3F2"
+      border-radius: 8
+      shadow: true
+    }
+
+    PropagateTruth: "Propagate Truth Model"
+    GenerateObs: "Generate Observations\nfrom Truth + Noise"
+
+    PropagateEnKF: "Propagate EnKF Model"
+    AssimilateEnKF: "Assimilate with EnKF"
+
+    PropagateQPEns: "Propagate QPEns Model"
+    AssimilateQPEns: "Assimilate with QPEns"
+
+    PropagateCNN: "Propagate CNN Model"
+    AssimilateCNNEnKF: "Assimilate with EnKF"
+    CorrectCNN: "Apply CNN Correction"
+  }
+
+  Init -> Loop
+  Loop.PropagateTruth -> Loop.GenerateObs
+
+  Loop.GenerateObs -> Loop.PropagateEnKF -> Loop.AssimilateEnKF
+  Loop.GenerateObs -> Loop.PropagateQPEns -> Loop.AssimilateQPEns
+  Loop.GenerateObs -> Loop.PropagateCNN -> Loop.AssimilateCNNEnKF -> Loop.CorrectCNN
+
+  Loop.AssimilateEnKF -> Loop.PropagateTruth: "Continue Loop"
+  Loop.AssimilateQPEns -> Loop.PropagateTruth: "Continue Loop"
+  Loop.CorrectCNN -> Loop.PropagateTruth: "Continue Loop"
+
+  Loop -> Collect: "Collect Histories\n(Truth vs Analysis States)"
+  Loop -> Loop: "Run Loop for Multiple Seeds"
+  Collect -> Save: "Save Histories\n(for Verification or CP/CQR Calibration)"
+}

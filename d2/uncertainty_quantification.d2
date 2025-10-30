@@ -1,0 +1,23 @@
+evaluation: {
+  label: "Uncertainty Quantification"
+  shape: rectangle
+  style: {
+    fill: "#ADD8E6"
+    border-radius: 8
+    shadow: true
+  }
+
+  Load: "Load Histories\n(Truth, QPEns, CNN)"
+
+  Split: "Split Data\n(Calibration vs Test)"
+
+  Calibrate: "Calibrate Quantiles\n(Non-Conformity Scores from Calib Diffs)"
+
+  Apply: "Apply to Test\n(Compute Prediction Intervals)"
+
+  Check: "Check Coverage\n(Target vs Actual)"
+
+  Visualize: "Visualize Results\n(Coverage, Intervals, Gridpoints)"
+
+  Load -> Split -> Calibrate -> Apply -> Check -> Visualize: {style: {stroke-width: 2}}
+}
