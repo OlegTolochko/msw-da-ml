@@ -16,10 +16,22 @@ vars: {
 
     msw_model.loop.label: "Main Simulation Loop"
     msw_model.loop.Forecast: "Propagate All Models Instances\n(MSW Physics)"
-    msw_model.loop.Observations: "Generate observations for EnKF and QPEns (from Truth + Noise)\n\nTo generate observations Truth is noised, then copied num_ens_members times\nand noised again individually for each ensemble member.\nObservation error is roughly 10% of maximum deviation from variable mean\nOutput: (3, num_grid_points, num_ens_members)\n\nObservations are only available at specific locations, every non chosen location is zeroed.\nIf observations surpass set rain threshold or arel randomly selected\n(10% of remaining gridpoints) observations are used.\n\nThis setup is supposed to simulate imperfect sensor/radar measurements\nNoise Positions are also saved."
+    msw_model.loop.Observations: {
+      label: "Generate Observations"
+      shape: rectangle
+      style: {
+        fill: "#FFF2CC"
+        border-radius: 4
+      }
+      GenerateBaseNoise: "Add base noise to Truth state\n(Error ~10% of max deviation from mean)\nOutput: Noisy truth (3, num_grid_points, 1)"
+      CopyAndIndividualNoise: "Copy noisy truth num_ens_members times\nAdd individual ensemble noise\nOutput: Obs ensemble (3, num_grid_points, num_ens_members)"
+      ApplyLocationMasks: "Apply radar-like masks:\n- Zero non-observed locations\n- Observe all vars if rain > threshold\n- Randomly observe ~10% clear sky (wind only)\nSimulates imperfect sensors\nSave positions\nOutput: Masked obs (3, num_grid_points, num_ens_members)"
+      GenerateBaseNoise -> CopyAndIndividualNoise -> ApplyLocationMasks: {style: {stroke-width: 2}}
+    }
     msw_model.loop.Assimilate: "Assimilate observations (For EnKF and QPEns)\nand append assimilated states to history\n\nNote: Since Data is used for training a CNN\nwith Goal of EnKF + CNN mimicing QPEns behavior,\nit is fair to set the EnKF state to the current\nQPEns State before the next propagation."
 
-    msw_model.loop.Forecast -> msw_model.loop.Observations -> msw_model.loop.Assimilate: {style: {stroke-width: 2}}
+    msw_model.loop.Forecast -> msw_model.loop.Observations.GenerateBaseNoise: {style: {stroke-width: 2}}
+    msw_model.loop.Observations.ApplyLocationMasks -> msw_model.loop.Assimilate: {style: {stroke-width: 2}}
     msw_model.loop.Assimilate -> msw_model.loop.Forecast: "Continue" {
       style: {
         stroke: "#E06666"
