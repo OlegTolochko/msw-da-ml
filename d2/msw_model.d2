@@ -35,7 +35,7 @@ msw_model (EnsembleModel Instance): {
   loop.F -> G: "No\n(Outputted State is\nfinal unfiltered future)" {style: {stroke-width: 2}}
   loop.F -> H: "No\n(Truth Generation,\nOutputted State is\nfinal unfiltered future)" {style: {stroke-width: 2}}
   G: "Assimilate New State\n(model_instance.assimilate(new_state))"
-  H: "Current State\nAccessible via model_instance.state"
+  H: "Current State\nShape: (3, num_grid_points, num_ens_members)\nAccessible via model_instance.state"
   G -> H: {style: {stroke-width: 2}}
   H -> loop.C: "Loop Back" {style: {stroke-width: 2}}
 }

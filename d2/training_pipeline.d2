@@ -1,0 +1,32 @@
+training: {
+  label: "(QR) CNN Training Pipeline"
+  shape: rectangle
+  style: {
+    fill: "#FFE599"
+    border-radius: 8
+    shadow: true
+  }
+
+  Load: "Load QPEns and EnKF States\nand Observation Locations\nEach of Shape: (num_timesteps, 3, num_grid_points, num_ens_members),\nwhere for Truth num_ens_members=1"
+  Prepare: "Prepare Training Data\n(KF_states + obs_locations -> QP_states)\n\nAppend only rain observations to input (thus 3->4 channels)\nIn: (batch_size, 4, num_grid_points)\nTarget: (batch_size, 3, num_gridpoints)\nwhere batch dimension is the flattend ensemble and timestep dimension.\n80/20 Train/Test Split is performed"
+  CNN: {
+    label: "Train CNN Model\n(Learn correction: CNN(EnKF) -> QPEns)"
+    shape: rectangle
+    style: {
+      fill: "#F4CCCC"
+      border-radius: 4
+    }
+    Normalization: "Compute Normalization Stats\n(Mean/Std per channel on train data)\n\nNormalize input/target:\nInput: (B,4,GP) -> norm\nTarget: (B,3,GP) -> norm\nSave stats (.pt)\n\nQR: Separate stats file"
+    ModelInit: "Input: (B,4,GP)\n- Conv1D(4->32, k=3, pad=circ)\n- SELU\n- (N-2)× [Conv1D(32->32, k=3, pad=circ)]\n- Conv1D(32->3, k=3, pad=circ)\n- ReLU on rain channel\n\nQR: Dual output heads (lower/upper quantiles)"
+    ForwardPass: "Forward Pass\n\nModel(input_norm) -> output_norm (B,3,G)\nDenorm: output = norm * std_out + mean_out\n\nQR: Model -> lower/upper (B,3,GP each)"
+    TrainingLoop: "Training Loop\n\nLoss: RMSEBias (standard) or Pinball (for QR)\n\nTrain: Forward + Loss + Backward + Step\nVal: Forward + Loss"
+    Normalization -> ModelInit -> ForwardPass -> TrainingLoop: {style: {stroke-width: 2}}
+  }
+
+  Load -> Prepare -> CNN.Normalization: {style: {stroke-width: 2}}
+  CNN.TrainingLoop -> SaveModel: "Save Model Weights (.pth)\nand Norm Stats (.pt)" {style: {stroke-width: 2}}
+}
+data_generation_states: "Generated Training data"
+
+data_generation_states -> training.Load: "Saved States" {style: {stroke-width: 2}}
+training.SaveModel: "Trained Model"

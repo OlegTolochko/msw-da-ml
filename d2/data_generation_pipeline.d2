@@ -4,7 +4,7 @@ vars: {
   }
 }
   data_generation: {
-    label: "Data Generation Pipeline (For CNN Training)"
+    label: "Data Generation Pipeline (Mainly For CNN Training)"
     shape: rectangle
     style: {
       fill: "#D9EAD3"
@@ -40,5 +40,5 @@ vars: {
     }
 
     msw_model.Init -> msw_model.loop.Forecast: "Run for num_timesteps" {style: {stroke-width: 2}}
-    msw_model.loop.Assimilate -> Save: "Save All 3 EnKF, QPEns and Truth state histories\nas well as observation locations\nEach of shape: (num_timesteps, 3, num_grid_points, num_ens_members),\n where for Truth num_ens_members=1" {style: {stroke-width: 2}}
+    msw_model.loop.Assimilate -> Save: "Save All 3 EnKF, QPEns and Truth state histories\nas well as observation locations\nEach of shape: (num_timesteps, 3, num_grid_points, num_ens_members),\nwhere for Truth num_ens_members=1" {style: {stroke-width: 2}}
   }
