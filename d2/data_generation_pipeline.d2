@@ -1,0 +1,32 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+  data_generation: {
+    label: "Data Generation Pipeline (For CNN Training)"
+    shape: rectangle
+    style: {
+      fill: "#D9EAD3"
+      border-radius: 8
+      shadow: true
+    }
+
+    msw_model.Init.label: "Initialize Ensemble Models\n(Truth + EnKF + QPens)\n\n3 EnsembleModel instances with initialized states of shape:\nTruth: (3, num_grid_points, 1),\nEnKF and QPEns: (3, num_grid_points, num_ens_members)"
+
+    msw_model.loop.label: "Main Simulation Loop"
+    msw_model.loop.Forecast: "Propagate All Models Instances\n(MSW Physics)"
+    msw_model.loop.Observations: "Generate observations for EnKF and QPEns (from Truth + Noise)\n\nTo generate observations Truth is noised, then copied num_ens_members times\nand noised again individually for each ensemble member.\nObservation error is roughly 10% of maximum deviation from variable mean\nOutput: (3, num_grid_points, num_ens_members)\n\nObservations are only available at specific locations, every non chosen location is zeroed.\nIf observations surpass set rain threshold or arel randomly selected\n(10% of remaining gridpoints) observations are used.\n\nThis setup is supposed to simulate imperfect sensor/radar measurements\nNoise Positions are also saved."
+    msw_model.loop.Assimilate: "Assimilate observations (For EnKF and QPEns)\nand append assimilated states to history\n\nNote: Since Data is used for training a CNN\nwith Goal of EnKF + CNN mimicing QPEns behavior,\nit is fair to set the EnKF state to the current\nQPEns State before the next propagation."
+
+    msw_model.loop.Forecast -> msw_model.loop.Observations -> msw_model.loop.Assimilate: {style: {stroke-width: 2}}
+    msw_model.loop.Assimilate -> msw_model.loop.Forecast: "Continue" {
+      style: {
+        stroke: "#E06666"
+        stroke-width: 2
+      }
+    }
+
+    msw_model.Init -> msw_model.loop.Forecast: "Run for num_timesteps" {style: {stroke-width: 2}}
+    msw_model.loop.Assimilate -> Save: "Save All 3 EnKF, QPEns and Truth state histories\nas well as observation locations\nEach of shape: (num_timesteps, 3, num_grid_points, num_ens_members),\n where for Truth num_ens_members=1" {style: {stroke-width: 2}}
+  }
