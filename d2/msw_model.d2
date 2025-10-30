@@ -1,0 +1,41 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+msw_model: {
+  shape: rectangle
+  style: {
+    fill: "#D9EAD3"
+    border-radius: 8
+  }
+
+  Init: "Initialize State\n[u, h, r]: (3, num_gridpoints, num_ens_members)\n\nInitial Values across all gridpoint and ensemble members:\nu=10 (velocity), h=90 (water amount/height), r=0 (rain)"
+
+  loop: {
+    label: "Propagation Loop"
+    style: {
+      fill: "#FCE5CD"
+    }
+    C: "Propagate State\nPerformed for num_sub_steps (120, specified in config)"
+    D: "ShallowWaterPhysics.step()\nTakes in past, present state and\n ensemble-wise different wind perturbation.\nOutputs past, present and unfiltered future state.\n\nVariables interact with eachother\nand evolve in a physically consistent way.\n\nOnly Random factor is wind perturbation,\nwhich ensures individual ensembles evolve differently."
+    E: "Update:\nu (wind/velocity),\nh (water amount/height),\nr (rain)"
+    F: "More Steps?"
+
+    C -> D -> E -> F: {style: {stroke-width: 2}}
+    F -> C: "Yes" {
+      style: {
+        stroke: "#E06666"
+        stroke-width: 2
+      }
+    }
+  }
+
+  Init -> loop.C: "Loop is run N times\n(8 times in code)" {style: {stroke-width: 2}}
+  loop.F -> G: "No\n(Outputted State is\nfinal unfiltered future)" {style: {stroke-width: 2}}
+  loop.F -> H: "No\n(Truth Generation,\nOutputted State is\nfinal unfiltered future)" {style: {stroke-width: 2}}
+  G: "Assimilate New State"
+  H: "Current State"
+  G -> H: {style: {stroke-width: 2}}
+  H -> loop.C: "Loop Back" {style: {stroke-width: 2}}
+}
