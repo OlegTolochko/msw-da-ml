@@ -1,5 +1,10 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
 evaluation: {
-  label: "Uncertainty Quantification"
+  label: "Uncertainty Quantification (CP)"
   shape: rectangle
   style: {
     fill: "#ADD8E6"
@@ -7,15 +12,15 @@ evaluation: {
     shadow: true
   }
 
-  Load: "Load Histories\n(Truth, QPEns, CNN)"
+  Load: "Load Histories\n(Truth, QPEns, CNN)\nShape: (num_seeds, num_timesteps, 3, num_grid_points, num_ensemble_members)\nwhere num_ensemble_members=1 for Truth"
 
-  Split: "Split Data\n(Calibration vs Test)"
+  Split: "Split Data (Calibration vs Test)\nbased on seed dimension (e.g. 50/50)"
 
-  Calibrate: "Calibrate Quantiles\n(Non-Conformity Scores from Calib Diffs)"
+  Calibrate: "Calibrate Quantiles\n(Non-Conformity Scores from Calibration Differences)\n\n- Calculate Ensemble Means for QPEns and CNN Calibration Data\n  Shape: (num_calib_seeds, num_timesteps, 3, num_grid_point)\n- Absolute Difference between QPEns and Calibration ensembele means\n  (normalization here if enabled)\n- calculate quantiles (n% quantile, e.g. 90%) from seed and gridpoint dimension, out: (num_timesteps, 3)\n  thus for each timestep 1 quantile for velocity, wind and height\nwhere n% of the absolute prediction errors across seeds and gridpoints are below this quantile value."
 
-  Apply: "Apply to Test\n(Compute Prediction Intervals)"
+  Apply: "Apply to Test\n(Compute Prediction Intervals)\n- expand quantiles to (num_seeds_test, num_timesteps 3, num_grid_points)\n(Denormalization here with test std)\n- calculate upper and lower intervals from test mean\n(upper_intervals = cnn_test_ens_mean + quantiles_expanded,\nlower_intervals = cnn_test_ens_mean - quantiles_expanded)"
 
-  Check: "Check Coverage\n(Target vs Actual)"
+  Check: "Check Coverage\n(Target vs Actual)\n- calculate ensemble mean on test data\n- coverage = (test_ens_mean > lower_quantiles) & (test_ens_mean < upper_quantiles)"
 
   Visualize: "Visualize Results\n(Coverage, Intervals, Gridpoints)"
 
