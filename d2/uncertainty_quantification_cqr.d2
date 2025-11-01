@@ -1,0 +1,53 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+evaluation: {
+  label: "Uncertainty Quantification (CQR)"
+  shape: rectangle
+  style: {
+    fill: "#ADD8E6"
+    border-radius: 8
+    shadow: true
+  }
+
+  Load: "Load Histories\n(Truth, QPEns, CNN)\nShape (Truth, QPEns): (num_seeds, num_timesteps, 3, num_grid_points, num_ensemble_members)\nwhere num_ensemble_members=1 for Truth\nShape (CNN): (num_seeds, num_timesteps, 3, num_grid_points, num_ensemble_members) for upper and lower intervals"
+
+  Split: "Split Data (Calibration vs Test)\nbased on seed dimension (e.g. 50/50)"
+
+  Calibrate: {
+    label: "Calculate Empirical Quantiles"
+    shape: rectangle
+    style: {
+      fill: "#E1D5E7"
+      border-radius: 4
+    }
+    EnsembleMeans: "Calculate Ensemble Means\nfor QPEns and CNN Upper/Lower Intervals\nShape: (num_calib_seeds, num_timesteps, 3, num_grid_points)"
+    CheckInside: "Check whether QPEns mean is inside CNN Upper/lower Intervals for each 3 variables individually\nE_var = np.max(CNN_lower - QPEns_mean, QPEns_mean - CNN_upper)\nErrors (E_var) are >0 if outside intervals else <=0\nShape (num_calib_seeds, num_timesteps, num_grid_points)"
+    ComputeKIndices: "Compute k-th indices in relation to\nMerge Gridpoint and seed dimension together, Shape (num_calib_seeds*num_grid_points, num_timesteps)\nCompute Quantile index k:\nk = int(np.ceil((1.0 - alpha) * (m + 1))) - 1"
+    QuantileEmpCalc: "Compute Empirical Quantiles\nOrder Error Values and select k-th smallest value in ordered Quantiles\nShape: (num_timesteps), so 1 empirical quantile value per timestep for the chosen variable\nThese emp. quantiles encode how much quantiles should be widened so that n% of truths fall inside"
+    EnsembleMeans -> CheckInside -> ComputeKIndices -> QuantileEmpCalc: {style: {stroke-width: 2}}
+  }
+
+  Apply: {
+    label: "Apply to Test\n(Compute Intervals)"
+    shape: rectangle
+    style: {
+      fill: "#E1D5E7"
+      border-radius: 4
+    }
+    ExpandQuantiles: "Expand Quantile Adjustment\nTile to (num_test_seeds, num_timesteps, 3, num_grid_points)\n"
+    ComputeIntervals: "Prediction Intervals\nfrom CNN_test_mean \ncnn_lower_mean - quantile_correction_expanded\ncnn_upper_mean + quantile_cocrrection_expanded\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
+    ExpandQuantiles -> ComputeIntervals: {style: {stroke-width: 2}}
+  }
+
+  Check: "Check Coverage\n(Target vs Actual)\n- Ensemble mean on QPEns test data\n- Bool: (QPEns_mean in [lower, upper])?\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
+
+  Visualize: "Visualize Results\n(Coverage over time ±std,\nInterval widths,\nGridpoints at chosen seed/timestep)"
+
+  Load -> Split -> Calibrate.EnsembleMeans: {style: {stroke-width: 2}}
+  Calibrate.QuantileEmpCalc -> Apply.ExpandQuantiles: {style: {stroke-width: 2}}
+  Apply.ComputeIntervals -> Check: {style: {stroke-width: 2}}
+  Check -> Visualize: {style: {stroke-width: 2}}
+}
