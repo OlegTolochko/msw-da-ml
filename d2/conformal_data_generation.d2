@@ -1,0 +1,54 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+data_generation: {
+  label: "History Data Generation Pipeline (for CP/CQR/Functionality Verification)"
+  shape: rectangle
+  style: {
+    fill: "#F2B8B8"
+    border-radius: 8
+    shadow: true
+  }
+
+  Init: "Initialize Models\n(Truth, EnKF, QPEns, CNN)\nAll EnsembleModel States of shape\n(3, num_grid_points, num_ensemble_members)\nwhere num_ensemble_members=1 for Truth"
+
+  Loop: {
+    label: "Loop (num_timesteps)"
+    shape: rectangle
+    style: {
+      fill: "#B8E3F2"
+      border-radius: 8
+      shadow: true
+    }
+
+    PropagateTruth: "Propagate Truth Model"
+    GenerateObs: "Generate Observations\nfrom Truth + Noise\nSame Observations used for all 3 Models\n(Follows same propagation setup as in\nData Generation Pipeline for CNN Training Data generation.\nOnly Difference is additional CNN Model\nand support for multiple independent runs/seeds)"
+
+    PropagateEnKF: "Propagate EnKF Model"
+    AssimilateEnKF: "Assimilate with EnKF"
+
+    PropagateQPEns: "Propagate QPEns Model"
+    AssimilateQPEns: "Assimilate with QPEns"
+
+    PropagateCNN: "Propagate CNN Model"
+    AssimilateCNNEnKF: "Assimilate with EnKF"
+    CorrectCNN: "Apply CNN Correction\nFor QR Models 2 Outputs: Lower and Upper Quantiles\nBoth of shape: (3, num_grid_points, num_ensemble_members)"
+  }
+
+  Init -> Loop
+  Loop.PropagateTruth -> Loop.GenerateObs: "Run for next Timestep"
+
+  Loop.GenerateObs -> Loop.PropagateEnKF -> Loop.AssimilateEnKF
+  Loop.GenerateObs -> Loop.PropagateQPEns -> Loop.AssimilateQPEns
+  Loop.GenerateObs -> Loop.PropagateCNN -> Loop.AssimilateCNNEnKF -> Loop.CorrectCNN
+
+  Loop.AssimilateEnKF -> Loop.PropagateTruth: "Continue Loop"
+  Loop.AssimilateQPEns -> Loop.PropagateTruth: "Continue Loop"
+  Loop.CorrectCNN -> Loop.PropagateTruth: "Continue Loop"
+
+  Loop -> Collect: "Collect Histories\nHistories each of shape:\n(num_seeds, num_timesteps, 3, num_grid_points, num_ensemble_members)\nFor CQR: (num_seeds, num_timesteps, 3)"
+  Loop -> Loop: "Run Loop for Multiple Seeds"
+  Collect -> Save: "Save Histories\n(for Verification or CP/CQR Calibration)"
+}

@@ -21,12 +21,13 @@ This project implements a shallow water model (MSW) with data assimilation techn
 ### Detailed Diagrams
 <details>
 <summary>Expand for Individual Diagrams</summary>
-   <img width="600" alt="msw_model" src="pipeline_visualizations/msw_model.png" />
-   <img width="600" alt="data_generation" src="pipeline_visualizations/data_generation.png" />
-   <img width="600" alt="training" src="pipeline_visualizations/training.png" />
-   <img width="600" alt="inference" src="pipeline_visualizations/inference.png" />
-   <img width="800" alt="history_data_generation" src="pipeline_visualizations/history_data_generation.png" />
-   <img width="600" alt="uncertainty_quantification" src="pipeline_visualizations/uncertainty_quantification.png" />
+   <img width="600" alt="msw_model" src="d2/msw_model.svg" />
+   <img width="600" alt="data_generation" src="d2/data_generation_pipeline.svg" />
+   <img width="600" alt="training" src="d2/training_pipeline.svg" />
+   <img width="600" alt="inference" src="d2/inference.svg" />
+   <img width="800" alt="history_data_generation" src="d2/conformal_data_generation.svg" />
+   <img width="600" alt="uncertainty_quantification_cp" src="d2/uncertainty_quantification_cp.svg" />
+   <img width="600" alt="uncertainty_quantification_cqr" src="d2/uncertainty_quantification_cqr.svg" />
 </details>
 
 ## Quick Start

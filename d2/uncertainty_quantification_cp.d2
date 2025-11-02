@@ -1,0 +1,52 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+evaluation: {
+  label: "Uncertainty Quantification (CP)"
+  shape: rectangle
+  style: {
+    fill: "#ADD8E6"
+    border-radius: 8
+    shadow: true
+  }
+
+  Load: "Load Histories\n(Truth, QPEns, CNN)\nShape: (num_seeds, num_timesteps, 3, num_grid_points, num_ensemble_members)\nwhere num_ensemble_members=1 for Truth"
+
+  Split: "Split Data (Calibration vs Test)\nbased on seed dimension (e.g. 50/50)"
+
+  Calibrate: {
+    label: "Calibrate Quantiles\n(Non-Conformity Scores)"
+    shape: rectangle
+    style: {
+      fill: "#E1D5E7"
+      border-radius: 4
+    }
+    EnsembleMeans: "Calculate Ensemble Means\nfor QPEns and CNN (Calib Data)\nShape: (num_calib_seeds, num_timesteps, 3, num_grid_points)"
+    AbsDiff: "Absolute Difference\n|QPEns_mean - CNN_mean|\n(Optional: / std per var if normalized)"
+    QuantileCalc: "Compute Quantiles\nnp.quantile(AbsDiff, q=90%, axis=(seeds, grid))\nOutput: (num_timesteps, 3)\n(1 quantile per time/var;\nn% errors below this value)"
+    EnsembleMeans -> AbsDiff -> QuantileCalc: {style: {stroke-width: 2}}
+  }
+
+  Apply: {
+    label: "Apply to Test\n(Compute Intervals)"
+    shape: rectangle
+    style: {
+      fill: "#E1D5E7"
+      border-radius: 4
+    }
+    ExpandQuantiles: "Expand Quantiles\nTile to (num_test_seeds, num_timesteps, 3, num_grid_points)\n× test_std (if normalized)"
+    ComputeIntervals: "Prediction Intervals\nfrom CNN_test_mean \nUpper: mean + quantiles_expanded\nLower: mean - quantiles_expanded\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
+    ExpandQuantiles -> ComputeIntervals: {style: {stroke-width: 2}}
+  }
+
+  Check: "Check Coverage\n(Target vs Actual)\n- Ensemble mean on QPEns test data\n- Bool: (QPEns_mean in [lower, upper])?\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
+
+  Visualize: "Visualize Results\n(Coverage over time ±std,\nInterval widths,\nGridpoints at chosen seed/timestep)"
+
+  Load -> Split -> Calibrate.EnsembleMeans: {style: {stroke-width: 2}}
+  Calibrate.QuantileCalc -> Apply.ExpandQuantiles: {style: {stroke-width: 2}}
+  Apply.ComputeIntervals -> Check: {style: {stroke-width: 2}}
+  Check -> Visualize: {style: {stroke-width: 2}}
+}

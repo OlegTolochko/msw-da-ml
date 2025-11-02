@@ -1,0 +1,44 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+  data_generation: {
+    label: "Data Generation Pipeline (Mainly For CNN Training)"
+    shape: rectangle
+    style: {
+      fill: "#D9EAD3"
+      border-radius: 8
+      shadow: true
+    }
+
+    msw_model.Init.label: "Initialize Ensemble Models\n(Truth + EnKF + QPens)\n\n3 EnsembleModel instances with initialized states of shape:\nTruth: (3, num_grid_points, 1),\nEnKF and QPEns: (3, num_grid_points, num_ens_members)"
+
+    msw_model.loop.label: "Main Simulation Loop"
+    msw_model.loop.Forecast: "Propagate All Models Instances\n(MSW Physics)"
+    msw_model.loop.Observations: {
+      label: "Generate Observations"
+      shape: rectangle
+      style: {
+        fill: "#FFF2CC"
+        border-radius: 4
+      }
+      GenerateBaseNoise: "Add base noise to Truth state\n(Error ~10% of max deviation from mean)\nOutput: Noisy truth (3, num_grid_points, 1)"
+      CopyAndIndividualNoise: "Copy noisy truth num_ens_members times\nAdd individual ensemble noise\nOutput: Obs ensemble (3, num_grid_points, num_ens_members)"
+      ApplyLocationMasks: "Generate radar-like mask, Shape: (3, num_grid_points)\n- Zero non-observed locations\n- Observe all vars if rain > threshold\n- Randomly observe ~10% clear sky (wind only)\nSimulates imperfect sensors\nSave positions\n\nApply Mask to Observation ensembele\n(mask out non observed locations ensemble-wise):\nMasked obs (3, num_grid_points, num_ens_members)"
+      GenerateBaseNoise -> CopyAndIndividualNoise -> ApplyLocationMasks: {style: {stroke-width: 2}}
+    }
+    msw_model.loop.Assimilate: "Assimilate observations (For EnKF and QPEns)\nand append assimilated states to history\n\nNote: Since Data is used for training a CNN\nwith Goal of EnKF + CNN mimicing QPEns behavior,\nit is fair to set the EnKF state to the current\nQPEns State before the next propagation."
+
+    msw_model.loop.Forecast -> msw_model.loop.Observations.GenerateBaseNoise: {style: {stroke-width: 2}}
+    msw_model.loop.Observations.ApplyLocationMasks -> msw_model.loop.Assimilate: {style: {stroke-width: 2}}
+    msw_model.loop.Assimilate -> msw_model.loop.Forecast: "Continue" {
+      style: {
+        stroke: "#E06666"
+        stroke-width: 2
+      }
+    }
+
+    msw_model.Init -> msw_model.loop.Forecast: "Run for num_timesteps" {style: {stroke-width: 2}}
+    msw_model.loop.Assimilate -> Save: "Save All 3 EnKF, QPEns and Truth state histories\nas well as observation locations\nEach of shape: (num_timesteps, 3, num_grid_points, num_ens_members),\nwhere for Truth num_ens_members=1\nand obs locations: (num_timesteps, 3, num_grid_points)" {style: {stroke-width: 2}}
+  }
