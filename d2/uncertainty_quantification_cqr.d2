@@ -37,8 +37,8 @@ evaluation: {
       fill: "#E1D5E7"
       border-radius: 4
     }
-    ExpandQuantiles: "Expand Quantile Adjustment\nTile to (num_test_seeds, num_timesteps, 3, num_grid_points)\n"
-    ComputeIntervals: "Prediction Intervals\nfrom CNN_test_mean \ncnn_lower_mean - quantile_correction_expanded\ncnn_upper_mean + quantile_cocrrection_expanded\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
+    ExpandQuantiles: "Expand Quantile Adjustment\nTile to (num_test_seeds, num_timesteps, 3, num_grid_points)\n(Symmetric widening)"
+    ComputeIntervals: "Adjusted Prediction Intervals\ncnn_lower_mean - quantile_correction_expanded\ncnn_upper_mean + quantile_correction_expanded\nShape: (num_test_seeds, num_timesteps, 3, num_grid_points)"
     ExpandQuantiles -> ComputeIntervals: {style: {stroke-width: 2}}
   }
 

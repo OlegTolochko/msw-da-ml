@@ -1,3 +1,8 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
 inference: {
   label: "Real-time Inference"
   style: {
@@ -6,7 +11,7 @@ inference: {
     shadow: true
   }
 
-  Init: "Initialize\n(Truth + EnKF Models + Optionally\nQPEns for performance comparison)"
+  Init: "Initialize Truth + EnKF + Optionally QPEns\n for performance comparison.\nLoad CNN Model Weights with associated normalization stats"
 
   Loop: {
     label: "Main Loop (num_inference_steps)"
@@ -17,9 +22,9 @@ inference: {
     }
 
     Forecast: "Propagate Models\n(truth + ensemble)"
-    Observe: "Generate Observations\n(from Truth + Noise)"
-    EnKF: "Assimilate with EnKF"
-    CNN_Correct: "CNN Correction\n(Normalize → Model Inference → Denormalize)"
+    Observe: "Generate Observations\n(from Truth + Noise,\nsame as in Data Generation Pipeline)\nObservations: (3, num_grid_points, num_ens_members)\nObs Locations: (3, num_gridpoints)"
+    EnKF: "Assimilate with EnKF\nOut State: (num_grid_points, 3, num_ens_members)"
+    CNN_Correct: "CNN Correction\n(Assimilated EnKF State → Append rain locations\n→ Normalize → Model Inference → Denormalize)"
   }
 
   Init -> Loop.Forecast: "initialize()"
