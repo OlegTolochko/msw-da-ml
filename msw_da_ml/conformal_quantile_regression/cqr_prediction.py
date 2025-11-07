@@ -343,6 +343,4 @@ def visualize_quantile_gridpoints(
 
 
 if __name__ == "__main__":
-    raw_quantile_conformal_prediction(
-        "quantile_hist_quantile_model_20250818T150026.pth_20250819T155037_43_2"
-    )
+    app()

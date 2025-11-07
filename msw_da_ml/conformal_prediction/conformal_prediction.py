@@ -16,7 +16,7 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 @app.command()
-def conformal_prediction(cp_hist_name: str, normalize: bool = False):
+def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterations: str = 10):
     """
     Runs conformal prediction pipeline.
     """
@@ -25,15 +25,17 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False):
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
-    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
-        train_test_split(
-            truth_hist,
-            qpens_hist,
-            cnn_hist,
-            test_size=1 - config.calibration_split_ratio,
-            random_state=config.calibration_split_seed,
+    for i in range(num_iterations):
+        truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
+            train_test_split(
+                truth_hist,
+                qpens_hist,
+                cnn_hist,
+                test_size=1 - config.calibration_split_ratio,
+                random_state=config.calibration_split_seed,
+            )
         )
-    )
+
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
     normalization_term = 1
