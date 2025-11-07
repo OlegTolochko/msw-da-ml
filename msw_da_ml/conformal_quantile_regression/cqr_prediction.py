@@ -135,7 +135,7 @@ def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
     m = s.shape[0]
     k = int(np.ceil((1.0 - alpha) * (m + 1))) - 1
     k = np.clip(k, 0, m - 1)
-    s_part = np.partition(s, k, axis=0)
+    s_part = np.partition(s, k, axis=0) # Puts k-th smallest value in k-th position in array
     return s_part[k]
 
 
@@ -157,7 +157,7 @@ def calibrate_quantile_intervals_symmetric(
     quantile_corrections = []
 
     for var_idx in range(3):
-        E_var = np.maximum(
+        E_var = np.max(
             cnn_lower_mean[:, :, var_idx, :] - truth_mean[:, :, var_idx, :],
             truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :],
         )
