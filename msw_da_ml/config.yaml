@@ -77,6 +77,7 @@ conformal_prediction_config:
 global_config:
   out_path: ./out/
   visualizations_out_filename: visualizations/
+  generated_data_animations_out_filename: generated_data_animations/
   msw_model_out_filename: msw_models/
   trained_nn_model_out_filename: trained_nn_models/
   normalization_out_filename: normalization_stats/

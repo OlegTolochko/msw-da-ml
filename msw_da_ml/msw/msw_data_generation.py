@@ -5,6 +5,7 @@ from typing import Dict, Any
 import copy
 import pickle
 from pathlib import Path
+from datetime import datetime
 
 import tqdm
 
@@ -39,12 +40,17 @@ class DataGenerationPipeline:
         generate_evolution_animations: bool = True,
         save_data: bool = True,
         pipeline_state_save_name: str = "cnn_training_data",
+        include_timestamp_in_name: bool = True
     ):
         """
         Generates Truth, QPEns and EnKF data history.
         This data may be used for verifying or testing different msw model configurations.
         The main utility for the generated data is as training data for the CNN.
         """
+        if include_timestamp_in_name:
+            timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+            pipeline_state_save_name += f"_{timestamp}"
+        
         model_truth = EnsembleModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
         )
@@ -71,7 +77,7 @@ class DataGenerationPipeline:
             state = self._assimilate_and_forecast(state)
 
         if generate_evolution_animations:
-            self._generate_animations(state)
+            self._generate_animations(state, pipeline_state_save_name)
 
         if save_data:
             self._save_pipeline_state(
@@ -155,10 +161,12 @@ class DataGenerationPipeline:
 
         return state
 
-    def _generate_animations(self, state: DataGenerationState):
+    def _generate_animations(self, state: DataGenerationState, pipeline_state_save_name: str):
         """Generate output animations"""
-        kf_animation_path = get_output_dir("model_evolution_kf.mp4")
-        qp_animation_path = get_output_dir("model_evolution_qp.mp4")
+        kf_animation_path = get_output_dir(global_config.generated_data_animations_out_filename)
+        qp_animation_path = get_output_dir(global_config.generated_data_animations_out_filename)
+        f"{pipeline_state_save_name}_evolution_kf.mp4"
+        f"{pipeline_state_save_name}_model_evolution_qp.mp4"
         animate_evolution_from_history(
             state.histories["kf"], str(kf_animation_path)
         )

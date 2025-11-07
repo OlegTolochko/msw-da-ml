@@ -78,13 +78,13 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False):
         f"Target coverage: {config.calibration_quantile:.0%}, Actual coverage: {np.mean(coverage):.2%}"
     )
     if normalize:
-        hist_name += "_normalized"
+        cp_hist_name += "_normalized"
 
     quantiles = np.mean(quantiles_expanded, axis=(0, -1))
-    visualize_coverage(coverage, hist_name)
-    visualize_quantile_intervals(quantiles, hist_name)
+    visualize_coverage(coverage, cp_hist_name)
+    visualize_quantile_intervals(quantiles, cp_hist_name)
     visualize_coverage_gridpoints(
-        upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, hist_name
+        upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, cp_hist_name
     )
 
 
