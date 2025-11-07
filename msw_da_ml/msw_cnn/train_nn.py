@@ -132,7 +132,7 @@ def get_train_val_loaders(
 
 
 @app.command()
-def train_nn(generated_training_data_name: str, include_timestamp_in_name: bool = True):
+def train_nn(generated_training_data_name: str, model_name: str = "cnn_model", include_timestamp_in_name: bool = True):
     """
     Traines the CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
@@ -143,7 +143,6 @@ def train_nn(generated_training_data_name: str, include_timestamp_in_name: bool 
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
 
-    model_name = f"{training_config.model_save_name}"
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
