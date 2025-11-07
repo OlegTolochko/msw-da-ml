@@ -16,7 +16,7 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 @app.command()
-def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterations: str = 10):
+def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterations: int = 10):
     """
     Runs conformal prediction pipeline.
     """
@@ -25,6 +25,7 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
+    coverages = []
     for i in range(num_iterations):
         truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
             train_test_split(
@@ -32,62 +33,88 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
                 qpens_hist,
                 cnn_hist,
                 test_size=1 - config.calibration_split_ratio,
-                random_state=config.calibration_split_seed,
+                random_state=config.calibration_split_seed + i,
             )
         )
 
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+        variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
-    normalization_term = 1
-    # Normalization based on variable-wise std
-    if normalize:
-        cnn_std = np.std(cnn_calib, axis=-1)
-        # Epsilon is only required for rain, which can be 0
-        cnn_std[:, :, 2] += config.rain_normalization_eps
-        normalization_term = cnn_std
-        for i, var_name in enumerate(variable_names):
-            print(f"{var_name} mean std: {np.mean(cnn_std[:, :, i])}")
-            print(f"{var_name} min std: {np.min(cnn_std[:, :, i])}")
-            print(f"{var_name} max std: {np.max(cnn_std[:, :, i])}")
+        normalization_term = 1
+        # Normalization based on variable-wise std
+        if normalize:
+            cnn_std = np.std(cnn_calib, axis=-1)
+            # Epsilon is only required for rain, which can be 0
+            cnn_std[:, :, 2] += config.rain_normalization_eps
+            normalization_term = cnn_std
+            for j, var_name in enumerate(variable_names):
+                print(f"{var_name} mean std: {np.mean(cnn_std[:, :, j])}")
+                print(f"{var_name} min std: {np.min(cnn_std[:, :, j])}")
+                print(f"{var_name} max std: {np.max(cnn_std[:, :, j])}")
 
-    # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
-    quantiles = calibrate(
-        truth_calib=qpens_calib,
-        cnn_calib=cnn_calib,
-        normalization_term=normalization_term,
-    )
-    cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
-
-    normalization_term_test = 1.0
-    if normalize:
-        cnn_test_std = np.std(cnn_test, axis=-1)
-        cnn_test_std[:, :, 2] += config.rain_normalization_eps
-        normalization_term_test = cnn_test_std
-
-    quantiles_expanded = (
-        np.tile(
-            np.expand_dims(quantiles, (0, -1)),
-            (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
+        # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
+        quantiles = calibrate(
+            truth_calib=qpens_calib,
+            cnn_calib=cnn_calib,
+            normalization_term=normalization_term,
         )
-        * normalization_term_test
-    )
+        cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
 
-    upper_intervals = cnn_test_ens_mean + quantiles_expanded
-    lower_intervals = cnn_test_ens_mean - quantiles_expanded
+        normalization_term_test = 1.0
+        if normalize:
+            cnn_test_std = np.std(cnn_test, axis=-1)
+            cnn_test_std[:, :, 2] += config.rain_normalization_eps
+            normalization_term_test = cnn_test_std
 
-    coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
+        quantiles_expanded = (
+            np.tile(
+                np.expand_dims(quantiles, (0, -1)),
+                (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
+            )
+            * normalization_term_test
+        )
+
+        upper_intervals = cnn_test_ens_mean + quantiles_expanded
+        lower_intervals = cnn_test_ens_mean - quantiles_expanded
+
+        coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
+        coverages.append(coverage)
+        if normalize:
+            cp_hist_name += "_normalized"
+
+        quantiles = np.mean(quantiles_expanded, axis=(0, -1))
+        if i == 0: # only visualize quantile intervals and gridpoint coverage for first iteration
+            visualize_quantile_intervals(quantiles, cp_hist_name)
+            visualize_coverage_gridpoints(
+                upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, cp_hist_name
+            )
     print(
-        f"Target coverage: {config.calibration_quantile:.0%}, Actual coverage: {np.mean(coverage):.2%}"
+        f"Target coverage: {config.calibration_quantile:.0%}"
     )
-    if normalize:
-        cp_hist_name += "_normalized"
+    mean_coverage = np.mean(coverages)
+    var_coverage = np.var([np.mean(coverage) for coverage in coverages])
+    print(f"Mean Coverage: {mean_coverage} for {num_iterations} data splits")
+    print(f"Coverage Variance: {var_coverage} for {num_iterations} data splits")
 
-    quantiles = np.mean(quantiles_expanded, axis=(0, -1))
-    visualize_coverage(coverage, cp_hist_name)
-    visualize_quantile_intervals(quantiles, cp_hist_name)
-    visualize_coverage_gridpoints(
-        upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, cp_hist_name
-    )
+    coverage_iter_mean = np.mean(coverages, axis=0)
+    visualize_coverage(coverage_iter_mean, cp_hist_name)
+
+@app.command()
+def cnn_std_cov(cp_hist_name: str):
+    histories = load_histories(cp_hist_name)
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    cnn_hist = np.asarray([history.cnn_analysis for history in histories])
+
+    cnn_ens_mean = np.mean(cnn_hist, axis=-1)
+    cnn_ens_std = np.std(cnn_hist, axis=-1)
+    upper_intervals = cnn_ens_mean + cnn_ens_std
+    lower_intervals = cnn_ens_mean - cnn_ens_std
+
+    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
+    mean_coverage = np.mean(coverage)
+    print(f"Mean Coverage: {mean_coverage}")
+
+    print(mean_coverage)
+    visualize_coverage(coverage, cp_hist_name+"_cnn_std")
 
 
 def check_coverage(
@@ -172,7 +199,7 @@ def visualize_coverage(coverage: np.ndarray, hist_name: str):
     plt.tight_layout()
 
     base_name = hist_name.replace(".npz", "")
-    save_path = f"{viz_dir}{base_name}_conformal_coverage.png"
+    save_path = f"{viz_dir}/{base_name}_conformal_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage visualization saved to: {save_path}")
 
