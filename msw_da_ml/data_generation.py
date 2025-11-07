@@ -16,14 +16,14 @@ get_output_dir()
 
 
 @app.command()
-def generate_training_data(
+def generate_cnn_training_data(
     num_ensemble_members: int = 10,
     num_steps: int = 20,
+    data_save_name: str = "cnn_training_data"
 ):
     pipeline = DataGenerationPipeline(
-        num_ensemble_members=num_ensemble_members, rngs=rngs
-    )
-    result = pipeline.run(num_steps=num_steps)
+        num_ensemble_members=num_ensemble_members, rngs=rngs)
+    result = pipeline.run(num_steps=num_steps, pipeline_state_save_name=data_save_name)
 
 
 @app.command()
