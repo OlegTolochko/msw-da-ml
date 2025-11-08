@@ -178,7 +178,7 @@ def run_pipeline(
         )
         all_histories.append(history)
 
-    return all_histories, pipeline.loaded_model_name
+    return all_histories, load_model_name
 
 
 def save_histories(
