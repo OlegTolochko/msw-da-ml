@@ -11,6 +11,7 @@ from tqdm import tqdm
 from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.msw_cnn.mcdo_network import MCDOCNNModel
 from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
 
 
@@ -132,10 +133,29 @@ def get_train_val_loaders(
 
 
 @app.command()
+def train_mcdo_nn(generated_training_data_name: str, model_name: str = "mcdo_cnn_model", include_timestamp_in_name: bool = True):
+    """
+    Trains the MCDO CNN Model based on training data given from a pipeline state.
+    Saves the trained model weights under the trained_nn_model_path set in the config.
+    """
+    dropout = training_config.mcdo_dropout
+    model = MCDOCNNModel(dropout=dropout)
+    train(generated_training_data_name, model, model_name, include_timestamp_in_name)
+
+
+@app.command()
 def train_nn(generated_training_data_name: str, model_name: str = "cnn_model", include_timestamp_in_name: bool = True):
     """
-    Traines the CNN Model based on training data given from a pipeline state.
+    Trains the CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
+    """
+    model = CNNModel()
+    train(generated_training_data_name, model, model_name, include_timestamp_in_name)
+
+
+def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool):
+    """
+    Base Training method
     """
     device = (
         "mps"
@@ -146,8 +166,7 @@ def train_nn(generated_training_data_name: str, model_name: str = "cnn_model", i
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
-
-    model = CNNModel()
+ 
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
         generated_training_data_name, device, model_name, normalization_path=normalization_path
