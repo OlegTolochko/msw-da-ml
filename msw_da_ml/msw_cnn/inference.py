@@ -23,11 +23,11 @@ trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_o
 normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
-def get_most_recent_model_name():
+def get_most_recent_model_name(name_begins_with: str):
     most_recent_model = None
     most_recent_time = 0
     for model in os.scandir(trained_nn_model_path):
-        if model.is_file() and model.name.endswith(".pth"):
+        if model.is_file() and model.name.endswith(".pth") and model.name.startswith(name_begins_with):
             mod_time = model.stat().st_mtime_ns
             if mod_time > most_recent_time:
                 most_recent_model = model
@@ -35,7 +35,7 @@ def get_most_recent_model_name():
     return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
-def load_trained_model(load_model_name: str = "", device: str = "cuda"):
+def load_trained_model(load_model_name: str = "", name_begins_with: str = "", device: str = "cuda"):
     """
     loads a trained cnn model. 
     If no name is provided the latest trained model is loaded.
@@ -43,7 +43,7 @@ def load_trained_model(load_model_name: str = "", device: str = "cuda"):
     Return
     """
     if not load_model_name:
-        load_model_name = get_most_recent_model_name()
+        load_model_name = get_most_recent_model_name(name_begins_with)
         if not load_model_name:
             raise FileNotFoundError("No model files found")
 
