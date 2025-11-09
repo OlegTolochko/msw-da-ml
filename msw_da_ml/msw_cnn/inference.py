@@ -27,7 +27,9 @@ def get_most_recent_model_name(name_begins_with: str):
     most_recent_model = None
     most_recent_time = 0
     for model in os.scandir(trained_nn_model_path):
-        if model.is_file() and model.name.endswith(".pth") and model.name.startswith(name_begins_with):
+        if model.is_file() and model.name.endswith(".pth"):
+            if name_begins_with and not model.name.startswith(name_begins_with):
+                continue
             mod_time = model.stat().st_mtime_ns
             if mod_time > most_recent_time:
                 most_recent_model = model

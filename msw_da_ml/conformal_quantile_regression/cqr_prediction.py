@@ -157,7 +157,7 @@ def calibrate_quantile_intervals_symmetric(
     quantile_corrections = []
 
     for var_idx in range(3):
-        E_var = np.max(
+        E_var = np.maximum(
             cnn_lower_mean[:, :, var_idx, :] - truth_mean[:, :, var_idx, :],
             truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :],
         )

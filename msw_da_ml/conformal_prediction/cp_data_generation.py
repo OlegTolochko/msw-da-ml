@@ -42,7 +42,7 @@ class ExperimentPipeline:
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.model, self.norm_stats = load_trained_model(
-            load_model_name, self.device
+            load_model_name= load_model_name, name_begins_with="model", device=self.device
         )
 
     def run_single_experiment(
@@ -171,7 +171,7 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistory], st
         )
         all_histories.append(history)
 
-    return all_histories, load_model_name
+    return all_histories
 
 
 def save_histories(
@@ -224,7 +224,7 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
 
 def generate_experiment_data(model_name: str = ""):
-    histories  = run_pipeline(model_name)
+    histories = run_pipeline(model_name)
     save_histories(histories)
 
     print(f"Generated {len(histories)} experiment histories")
