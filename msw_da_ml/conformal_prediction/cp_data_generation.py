@@ -171,7 +171,7 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistory], st
         )
         all_histories.append(history)
 
-    return all_histories, pipeline.loaded_model_name
+    return all_histories, load_model_name
 
 
 def save_histories(
