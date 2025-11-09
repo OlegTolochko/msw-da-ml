@@ -22,7 +22,7 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 def generate_comparison_analysis(
-    cp_hist_name: str, cqr_hist_name: str, normalize_cp: bool = True
+    cp_hist_name: str, cqr_hist_name: str, normalize_cp: bool = True, include_cnn_std: bool = False
 ):
     """
     Generate comparison plots between CP, normalized CP, and CQR methods.
@@ -104,6 +104,14 @@ def generate_comparison_analysis(
         cp_norm_lower = cp_cnn_mean - cp_norm_quantiles_exp
         cp_norm_coverage = check_coverage(cp_qpens_test, cp_norm_upper, cp_norm_lower)
 
+    if include_cnn_std:
+        cnn_ens_mean = np.mean(cp_cnn, axis=-1)
+        cnn_ens_std = np.std(cp_cnn, axis=-1)
+        cnn_std_upper_intervals = cnn_ens_mean + cnn_ens_std
+        cnn_std_lower_intervals = cnn_ens_mean - cnn_ens_std
+
+        cnn_std_coverage = check_coverage(cp_qpens, cnn_std_upper_intervals, cnn_std_lower_intervals)
+
     # Run CQR
     cqr_adjustments = calibrate_quantile_intervals_symmetric(
         cqr_qpens_calib, cqr_lower_calib, cqr_upper_calib
@@ -124,6 +132,11 @@ def generate_comparison_analysis(
         methods.append("CP (Normalized)")
         coverages.append(cp_norm_coverage)
         intervals.append((cp_norm_lower, cp_norm_upper))
+
+    if include_cnn_std:
+        methods.append("CNN STD")
+        coverages.append(cnn_std_coverage)
+        intervals.append((cnn_std_lower_intervals, cnn_std_upper_intervals))
 
     plot_coverage_comparison(coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}")
     plot_interval_width_comparison(
