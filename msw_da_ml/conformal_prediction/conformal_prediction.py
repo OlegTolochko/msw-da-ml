@@ -112,9 +112,34 @@ def cnn_std_cov(cp_hist_name: str):
     coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage}")
+    visualize_coverage(coverage, cp_hist_name + "_cnn_std")
 
-    print(mean_coverage)
-    visualize_coverage(coverage, cp_hist_name+"_cnn_std")
+
+@app.command()
+def mcdo_std_cov(mcdo_hist_name: str):
+    from msw_da_ml.conformal_prediction.mcdo_data_generation import (
+        load_histories as load_mcdo_histories,
+    )
+
+    histories = load_mcdo_histories(mcdo_hist_name)
+
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+
+    cnn_mcdo_hist = np.asarray([history.cnn_analysis for history in histories])
+
+    cnn_mcdo_ens_mean = np.mean(cnn_mcdo_hist, axis=-2)
+
+    cnn_mcdo_mean = np.mean(cnn_mcdo_ens_mean, axis=-1)
+    cnn_mcdo_std = np.std(cnn_mcdo_hist, axis=(-1,-2))
+
+    upper_intervals = cnn_mcdo_mean + cnn_mcdo_std
+    lower_intervals = cnn_mcdo_mean - cnn_mcdo_std
+
+    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
+    mean_coverage = np.mean(coverage)
+
+    print(f"MCDO +-1 std coverage vs QPEns mean: {mean_coverage}")
+    visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
 
 
 def check_coverage(
