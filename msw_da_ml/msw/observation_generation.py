@@ -39,6 +39,25 @@ def generate_observation(
     """
     num_grid_points = truth_state.shape[1]
     ensemble_shape = (num_ensemble_members, num_grid_points)
+    truth_perturb_shape = (num_grid_points)
+
+    u_error_truth = random_generator.normal(
+        loc=obs_config.u_error_mean,
+        scale=obs_config.u_error_std,
+        size=truth_perturb_shape,
+    )
+    h_error_truth = random_generator.normal(
+        loc=obs_config.h_error_mean,
+        scale=obs_config.h_error_std,
+        size=truth_perturb_shape,
+    )
+    r_error_truth = random_generator.lognormal(
+        mean=obs_config.r_error_mean,
+        sigma=obs_config.r_error_std,
+        size=truth_perturb_shape,
+    )
+    error_truth = np.stack([u_error_truth, h_error_truth, r_error_truth])[..., None]
+    truth_perturb = truth_state + error_truth
 
     u_error = random_generator.normal(
         loc=obs_config.u_error_mean,
@@ -59,7 +78,7 @@ def generate_observation(
     error_ensemble = np.transpose(
         np.stack([u_error, h_error, r_error], axis=1), (1, 2, 0)
     )
-    observation_ensemble = truth_state + error_ensemble
+    observation_ensemble = truth_perturb + error_ensemble
 
     return observation_ensemble
 
