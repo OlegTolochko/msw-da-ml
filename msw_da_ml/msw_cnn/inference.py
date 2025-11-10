@@ -37,7 +37,7 @@ def get_most_recent_model_name(name_begins_with: str):
     return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
-def load_trained_model(load_model_name: str = "", name_begins_with: str = "", device: str = "cuda"):
+def load_trained_model(model: torch.nn.Module = CNNModel ,load_model_name: str = "", name_begins_with: str = "", device: str = "cuda"):
     """
     loads a trained cnn model. 
     If no name is provided the latest trained model is loaded.
@@ -54,7 +54,7 @@ def load_trained_model(load_model_name: str = "", name_begins_with: str = "", de
 
     model_load_path = os.path.join(trained_nn_model_path, load_model_name)
 
-    model = CNNModel()
+    model = model()
     state_dict = torch.load(model_load_path, map_location=device)
     model.load_state_dict(state_dict, strict=True)
     print("Model weights loaded successfully.")
