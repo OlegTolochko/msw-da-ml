@@ -13,6 +13,7 @@ from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.msw_cnn.mcdo_network import MCDOCNNModel
 
 settings = load_settings()
 experiment_config = settings.experiment_config
@@ -28,6 +29,9 @@ class ExperimentHistoryMCDO:
     enkf_analysis: List[np.ndarray]
     qpens_analysis: List[np.ndarray]
     cnn_analysis: List[np.ndarray]
+    enkf_background: List[np.ndarray]
+    qpens_background: List[np.ndarray]
+    cnn_background: List[np.ndarray]
     seed: int
 
 
@@ -40,7 +44,7 @@ class ExperimentPipelineMCDO:
         )
         name_begins_with = "mcdo"
         self.model, self.norm_stats = load_trained_model(
-            load_model_name, name_begins_with, self.device
+            MCDOCNNModel, load_model_name, name_begins_with, self.device
         )
         self.model.train() # set to train mode for MCDO
 
@@ -72,6 +76,9 @@ class ExperimentPipelineMCDO:
             enkf_analysis=[],
             qpens_analysis=[],
             cnn_analysis=[],
+            enkf_background=[],
+            qpens_background=[],
+            cnn_background=[],
             seed=seed,
         )
 
@@ -86,6 +93,7 @@ class ExperimentPipelineMCDO:
 
             enkf_model.propagate()
             enkf_state = enkf_model.get_state()
+            histories.enkf_background.append(enkf_state)
 
             enkf_assimilated = enkf.assimilate(
                 enkf_state, obs_data.observation, obs_data.locations
@@ -95,6 +103,7 @@ class ExperimentPipelineMCDO:
 
             qpens_model.propagate()
             qpens_state = qpens_model.get_state()
+            histories.qpens_background.append(qpens_state)
 
             qpens_assimilated = qpens.assimilate(
                 qpens_state, obs_data.observation, obs_data.locations
@@ -104,16 +113,23 @@ class ExperimentPipelineMCDO:
 
             cnn_model.propagate()
             cnn_state = cnn_model.get_state()
+            histories.cnn_background.append(cnn_state)
 
             cnn_enkf_assimilated = enkf.assimilate(
                 cnn_state, obs_data.observation, obs_data.locations
             )
 
-            cnn_corrected_mcdo = self._apply_cnn_correction(
-                cnn_enkf_assimilated, obs_data.locations
+            cnn_corrected_mcdo = self._apply_cnn_correction_mcdo(
+                cnn_enkf_assimilated,
+                obs_data.locations,
+                experiment_config.num_ensemble_members,
             )
-            cnn_corrected = torch.mean(cnn_corrected_mcdo, dim=0)
-            cnn_model.assimilate(cnn_corrected)
+
+            # Stack along last axis to get MCDO samples as an ensemble dimension
+            cnn_corrected_mcdo = np.stack(cnn_corrected_mcdo, axis=-1)
+
+            cnn_corrected_mean = np.mean(cnn_corrected_mcdo, axis=-1)  # (3, gridpoints, num_ens_members)
+            cnn_model.assimilate(cnn_corrected_mean)
 
             histories.cnn_analysis.append(cnn_corrected_mcdo.copy())
 
@@ -153,7 +169,7 @@ class ExperimentPipelineMCDO:
         return corrections
 
 
-def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistoryMCDO], str]:
+def run_pipeline(load_model_name: str = "") -> List[ExperimentHistoryMCDO]:
     pipeline = ExperimentPipelineMCDO(load_model_name)
     all_histories = []
 
@@ -168,14 +184,14 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistoryMCDO]
         )
         all_histories.append(history)
 
-    return all_histories, load_model_name
+    return all_histories
 
 
 def save_histories(
     histories: List[ExperimentHistoryMCDO],
 ):
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    save_name = f"mcd_hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = os.path.join(experiments_path, save_name)
     save_data = {}
 
@@ -221,7 +237,7 @@ def load_histories(load_name: str) -> List[ExperimentHistoryMCDO]:
 
 
 def generate_experiment_data(model_name: str = ""):
-    histories  = run_pipeline(model_name)
+    histories = run_pipeline(model_name)
     save_histories(histories)
 
     print(f"Generated {len(histories)} experiment histories")
