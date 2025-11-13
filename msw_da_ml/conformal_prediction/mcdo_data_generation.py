@@ -13,7 +13,7 @@ from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.msw_cnn.mcdo_network import MCDOCNNModel
+from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
 
 settings = load_settings()
 experiment_config = settings.experiment_config
@@ -28,7 +28,8 @@ class ExperimentHistoryMCDO:
     truth: List[np.ndarray]
     enkf_analysis: List[np.ndarray]
     qpens_analysis: List[np.ndarray]
-    cnn_analysis: List[np.ndarray]
+    cnn_analysis_mean: List[np.ndarray]
+    cnn_analysis_logvar: List[np.ndarray]
     enkf_background: List[np.ndarray]
     qpens_background: List[np.ndarray]
     cnn_background: List[np.ndarray]
@@ -75,7 +76,8 @@ class ExperimentPipelineMCDO:
             truth=[],
             enkf_analysis=[],
             qpens_analysis=[],
-            cnn_analysis=[],
+            cnn_analysis_mean=[],
+            cnn_analysis_logvar=[],
             enkf_background=[],
             qpens_background=[],
             cnn_background=[],
@@ -119,7 +121,7 @@ class ExperimentPipelineMCDO:
                 cnn_state, obs_data.observation, obs_data.locations
             )
 
-            cnn_corrected_mcdo = self._apply_cnn_correction_mcdo(
+            cnn_corrected_mcdo, cnn_corrected_logvars = self._apply_cnn_correction_mcdo(
                 cnn_enkf_assimilated,
                 obs_data.locations,
                 experiment_config.num_ensemble_members,
@@ -131,7 +133,8 @@ class ExperimentPipelineMCDO:
             cnn_corrected_mean = np.mean(cnn_corrected_mcdo, axis=-1)  # (3, gridpoints, num_ens_members)
             cnn_model.assimilate(cnn_corrected_mean)
 
-            histories.cnn_analysis.append(cnn_corrected_mcdo.copy())
+            histories.cnn_analysis_mean.append(cnn_corrected_mcdo.copy())
+            histories.cnn_analysis_logvar.append(cnn_corrected_logvars.copy())
 
         return histories
     
@@ -139,6 +142,7 @@ class ExperimentPipelineMCDO:
         self, assimilated_state: np.ndarray, observation_locations: np.ndarray, num_iterations: int
     ) -> np.ndarray:
         corrections = []
+        correction_logvars = []
         for i in range(num_iterations):
             observation_locations_data = np.tile(
                 np.expand_dims(observation_locations[2:3], axis=-1),
@@ -158,15 +162,20 @@ class ExperimentPipelineMCDO:
             )
             
             with torch.no_grad():
-                corrected_norm = self.model(normalized_tensor)
+                corrected_norm_mean, corrected_norm_logvar = self.model(normalized_tensor)
 
             corrected_tensor = (
-                corrected_norm * self.norm_stats["std_out"]
+                corrected_norm_mean * self.norm_stats["std_out"]
             ) + self.norm_stats["mean_out"]
+            corrected_tensor_logvar = (
+                corrected_norm_logvar + 2*torch.log(self.norm_stats["std_out"] + 1e-8)
+            )
             corrected_state = corrected_tensor.permute(1, 2, 0).cpu().numpy()
+            corrected_state_logvars = corrected_tensor_logvar.permute(1,2,0).cpu().numpy()
             corrections.append(corrected_state)
+            correction_logvars.append(corrected_state_logvars)
 
-        return corrections
+        return corrections, correction_logvars
 
 
 def run_pipeline(load_model_name: str = "") -> List[ExperimentHistoryMCDO]:
@@ -199,7 +208,8 @@ def save_histories(
         save_data[f"truth_{i}"] = np.array(hist.truth)
         save_data[f"enkf_analysis_{i}"] = np.array(hist.enkf_analysis)
         save_data[f"qpens_analysis_{i}"] = np.array(hist.qpens_analysis)
-        save_data[f"cnn_analysis_{i}"] = np.array(hist.cnn_analysis)
+        save_data[f"cnn_analysis_mean_{i}"] = np.array(hist.cnn_analysis_mean)
+        save_data[f"cnn_analysis_logvar_{i}"] = np.array(hist.cnn_analysis_logvar)
         save_data[f"enkf_background_{i}"] = np.array(hist.enkf_background)
         save_data[f"qpens_background_{i}"] = np.array(hist.qpens_background)
         save_data[f"cnn_background_{i}"] = np.array(hist.cnn_background)
@@ -225,7 +235,8 @@ def load_histories(load_name: str) -> List[ExperimentHistoryMCDO]:
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
-            cnn_analysis=list(data[f"cnn_analysis_{i}"]),
+            cnn_analysis_mean=list(data[f"cnn_analysis_mean_{i}"]),
+            cnn_analysis_logvar=list(data[f"cnn_analysis_logvar_{i}"]),
             enkf_background=list(data[f"enkf_background_{i}"]),
             qpens_background=list(data[f"qpens_background_{i}"]),
             cnn_background=list(data[f"cnn_background_{i}"]),
