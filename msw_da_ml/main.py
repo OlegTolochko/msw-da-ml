@@ -26,7 +26,7 @@ app = cyclopts.App("For further more detailed settings you may look into the con
 def generate_training_data(
     num_ensemble_members: int = 10,
     num_steps: int = 20,
-    save_name: str = "trainig_data"
+    save_name: str = "training_data"
 ):
     """Generates Training data for CNN and CQR CNN.
 
