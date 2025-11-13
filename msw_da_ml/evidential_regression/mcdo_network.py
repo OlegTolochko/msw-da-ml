@@ -1,5 +1,3 @@
-"""CNN for Kalman Filter update correction"""
-
 import torch.nn.functional as F
 import torch.nn as nn
 
@@ -42,7 +40,7 @@ class MCDOCNNModel(nn.Module):
         layers += [
             nn.Conv1d(
                 in_channels=network_config.hidden_channels,
-                out_channels=3,
+                out_channels=6,
                 kernel_size=network_config.kernel_size,
                 padding=network_config.kernel_size // 2,
                 padding_mode="circular",
@@ -53,6 +51,8 @@ class MCDOCNNModel(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        x[:, 2] = F.relu(x[:, 2])
+        mean, var = x[:, :3], x[:, 3:]
 
-        return x
+        mean[:, 1] = F.relu(mean[:, 1])
+        var = F.softplus(var)
+        return mean, var
