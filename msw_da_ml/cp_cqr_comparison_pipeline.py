@@ -198,7 +198,7 @@ def plot_interval_width_comparison(intervals, method_names, save_name):
     """
     Creates 3x3 interval width + std comparison plot (3 variables x 3 methods).
     """
-    fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
+    fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12), sharey="row")
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
     for i, var_name in enumerate(variable_names):
