@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
+from scipy.stats import norm
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -106,8 +107,15 @@ def cnn_std_cov(cp_hist_name: str):
 
     cnn_ens_mean = np.mean(cnn_hist, axis=-1)
     cnn_ens_std = np.std(cnn_hist, axis=-1)
-    upper_intervals = cnn_ens_mean + cnn_ens_std
-    lower_intervals = cnn_ens_mean - cnn_ens_std
+
+    alpha = 1-config.calibration_quantile
+    lower = norm.ppf(alpha/2)
+    upper = norm.ppf(1- alpha/2)
+    print(lower)
+    print(upper)
+
+    upper_intervals = cnn_ens_mean + upper*cnn_ens_std
+    lower_intervals = cnn_ens_mean + lower*cnn_ens_std
 
     coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
     mean_coverage = np.mean(coverage)
