@@ -3,7 +3,8 @@ from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc
+
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -155,17 +156,29 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False):
         )
     )
     quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib=cnn_calib, qpens_calib=qpens_calib, cnn_test=cnn_test, qpens_test=qpens_test, normalize=cp_normalized)
-    print(coverage.shape)
+    visualize_coverage(coverage, hist_name=mcdo_hist_name)
 
     cnn_mcdo_epistemic = np.var(cnn_test_mcdo, axis=-1).mean(axis=-1)
+    
     cnn_mcdo_aleatoric = np.mean(np.exp(cnn_test_logvar), axis=-1).mean(axis=-1)
+    
     total_uncertainty = cnn_mcdo_aleatoric + cnn_mcdo_epistemic
 
-    auroc = roc_auc_score(coverage, cnn_mcdo_epistemic)
-    print(f"OOD Auroc: {auroc}")
+    failure_mask = 1 - coverage.astype(int)
 
-    #print(f"MCDO +-1 std coverage vs QPEns mean: {mean_coverage}")
-    #visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
+    failure_flat = failure_mask.flatten()
+    epistemic_flat = cnn_mcdo_epistemic.flatten()
+    aleatoric_flat = cnn_mcdo_aleatoric.flatten()
+    total_flat = total_uncertainty.flatten()
+
+    auroc_epistemic = roc_auc_score(failure_flat, epistemic_flat)
+    auroc_aleatoric = roc_auc_score(failure_flat, aleatoric_flat)
+    auroc_total = roc_auc_score(failure_flat, total_flat)
+
+    print(f"OOD Detection (Prediction of Non-Coverage) AUROC:")
+    print(f"  Epistemic: {auroc_epistemic:.4f}")
+    print(f"  Aleatoric: {auroc_aleatoric:.4f}")
+    print(f"  Total:     {auroc_total:.4f}")
 
 
 def check_coverage(
