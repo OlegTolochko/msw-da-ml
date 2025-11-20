@@ -29,6 +29,9 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
+    if normalize:
+        cp_hist_name += "_normalized"
+
     coverages = []
     for i in range(num_iterations):
         truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
@@ -101,8 +104,6 @@ def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize):
     lower_intervals = cnn_test_ens_mean - quantiles_expanded
 
     coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
-    if normalize:
-        cp_hist_name += "_normalized"
 
     quantiles = np.mean(quantiles_expanded, axis=(0, -1))
     return quantiles, coverage, upper_intervals, lower_intervals
@@ -133,14 +134,14 @@ def cnn_std_cov(cp_hist_name: str):
 
 
 @app.command()
-def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False):
+def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = True):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
-    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 2, 5)
+    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2) 
 
     cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-2)
     
@@ -158,9 +159,12 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False):
     quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib=cnn_calib, qpens_calib=qpens_calib, cnn_test=cnn_test, qpens_test=qpens_test, normalize=cp_normalized)
     visualize_coverage(coverage, hist_name=mcdo_hist_name)
 
-    cnn_mcdo_epistemic = np.var(cnn_test_mcdo, axis=-1).mean(axis=-1)
-    
-    cnn_mcdo_aleatoric = np.mean(np.exp(cnn_test_logvar), axis=-1).mean(axis=-1)
+    cnn_mcdo_epistemic = np.var(cnn_test_mcdo, axis=-1)
+    cnn_mcdo_aleatoric = np.mean(np.exp(cnn_test_logvar), axis=-1)
+
+    if ens_mean:
+        cnn_mcdo_epistemic = cnn_mcdo_epistemic.mean(axis=-1)
+        cnn_mcdo_aleatoric = cnn_mcdo_aleatoric.mean(axis=-1)
     
     total_uncertainty = cnn_mcdo_aleatoric + cnn_mcdo_epistemic
 
