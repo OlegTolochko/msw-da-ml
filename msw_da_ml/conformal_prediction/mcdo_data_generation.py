@@ -6,6 +6,7 @@ from datetime import datetime
 
 import torch
 import numpy as np
+from cyclopts import App
 
 from msw_da_ml.msw_cnn.inference import load_trained_model
 from msw_da_ml.msw.msw_model import EnsembleModel
@@ -14,6 +15,9 @@ from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
+
+
+app = App()
 
 settings = load_settings()
 experiment_config = settings.experiment_config
@@ -246,7 +250,7 @@ def load_histories(load_name: str) -> List[ExperimentHistoryMCDO]:
 
     return histories
 
-
+@app.command()
 def generate_experiment_data(model_name: str = ""):
     histories = run_pipeline(model_name)
     save_histories(histories)
@@ -255,4 +259,4 @@ def generate_experiment_data(model_name: str = ""):
 
 
 if __name__ == "__main__":
-    generate_experiment_data()
+    app()
