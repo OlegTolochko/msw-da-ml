@@ -6,6 +6,7 @@ from scipy.stats import norm
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.conformal_prediction.mcdo_data_generation import load_histories as load_mcdo_histories
 
 app = App()
 
@@ -37,52 +38,9 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
                 random_state=config.calibration_split_seed + i,
             )
         )
+        quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize)
 
-        variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
-        normalization_term = 1
-        # Normalization based on variable-wise std
-        if normalize:
-            cnn_std = np.std(cnn_calib, axis=-1)
-            # Epsilon is only required for rain, which can be 0
-            cnn_std[:, :, 2] += config.rain_normalization_eps
-            normalization_term = cnn_std
-            for j, var_name in enumerate(variable_names):
-                print(f"{var_name} mean std: {np.mean(cnn_std[:, :, j])}")
-                print(f"{var_name} min std: {np.min(cnn_std[:, :, j])}")
-                print(f"{var_name} max std: {np.max(cnn_std[:, :, j])}")
-
-        # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
-        quantiles = calibrate(
-            truth_calib=qpens_calib,
-            cnn_calib=cnn_calib,
-            normalization_term=normalization_term,
-        )
-        cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
-
-        normalization_term_test = 1.0
-        if normalize:
-            cnn_test_std = np.std(cnn_test, axis=-1)
-            cnn_test_std[:, :, 2] += config.rain_normalization_eps
-            normalization_term_test = cnn_test_std
-
-        quantiles_expanded = (
-            np.tile(
-                np.expand_dims(quantiles, (0, -1)),
-                (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
-            )
-            * normalization_term_test
-        )
-
-        upper_intervals = cnn_test_ens_mean + quantiles_expanded
-        lower_intervals = cnn_test_ens_mean - quantiles_expanded
-
-        coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
         coverages.append(coverage)
-        if normalize:
-            cp_hist_name += "_normalized"
-
-        quantiles = np.mean(quantiles_expanded, axis=(0, -1))
         if i == 0: # only visualize quantile intervals and gridpoint coverage for first iteration
             visualize_quantile_intervals(quantiles, cp_hist_name)
             visualize_coverage_gridpoints(
@@ -98,6 +56,55 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
 
     coverage_iter_mean = np.mean(coverages, axis=0)
     visualize_coverage(coverage_iter_mean, cp_hist_name)
+
+
+def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize):
+    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+
+    normalization_term = 1
+    # Normalization based on variable-wise std
+    if normalize:
+        cnn_std = np.std(cnn_calib, axis=-1)
+        # Epsilon is only required for rain, which can be 0
+        cnn_std[:, :, 2] += config.rain_normalization_eps
+        normalization_term = cnn_std
+        for j, var_name in enumerate(variable_names):
+            print(f"{var_name} mean std: {np.mean(cnn_std[:, :, j])}")
+            print(f"{var_name} min std: {np.min(cnn_std[:, :, j])}")
+            print(f"{var_name} max std: {np.max(cnn_std[:, :, j])}")
+
+    # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
+    quantiles = calibrate(
+        truth_calib=qpens_calib,
+        cnn_calib=cnn_calib,
+        normalization_term=normalization_term,
+    )
+    cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
+
+    normalization_term_test = 1.0
+    if normalize:
+        cnn_test_std = np.std(cnn_test, axis=-1)
+        cnn_test_std[:, :, 2] += config.rain_normalization_eps
+        normalization_term_test = cnn_test_std
+
+    quantiles_expanded = (
+        np.tile(
+            np.expand_dims(quantiles, (0, -1)),
+            (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
+        )
+        * normalization_term_test
+    )
+
+    upper_intervals = cnn_test_ens_mean + quantiles_expanded
+    lower_intervals = cnn_test_ens_mean - quantiles_expanded
+
+    coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
+    if normalize:
+        cp_hist_name += "_normalized"
+
+    quantiles = np.mean(quantiles_expanded, axis=(0, -1))
+    return quantiles, coverage
+
 
 @app.command()
 def cnn_std_cov(cp_hist_name: str):
@@ -124,16 +131,16 @@ def cnn_std_cov(cp_hist_name: str):
 
 
 @app.command()
-def mcdo_std_cov(mcdo_hist_name: str):
-    from msw_da_ml.conformal_prediction.mcdo_data_generation import (
-        load_histories as load_mcdo_histories,
-    )
-
+def mcdo_cp(mcdo_hist_name: str):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
 
-    cnn_mcdo_hist = np.asarray([history.cnn_analysis for history in histories])
+    cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
+    cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
+
+    aleatoric_uncertainty = np.mean()
+    epistemic_uncertainty = np.std()
 
     cnn_mcdo_ens_mean = np.mean(cnn_mcdo_hist, axis=-2)
 
