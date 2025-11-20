@@ -3,6 +3,7 @@ from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from sklearn.metrics import roc_auc_score
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -103,7 +104,7 @@ def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize):
         cp_hist_name += "_normalized"
 
     quantiles = np.mean(quantiles_expanded, axis=(0, -1))
-    return quantiles, coverage
+    return quantiles, coverage, upper_intervals, lower_intervals
 
 
 @app.command()
@@ -131,40 +132,53 @@ def cnn_std_cov(cp_hist_name: str):
 
 
 @app.command()
-def mcdo_cp(mcdo_hist_name: str):
+def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
-
+    truth_hist = np.asarray([history.truth for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
+    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 2, 5)
 
-    aleatoric_uncertainty = np.mean()
-    epistemic_uncertainty = np.std()
+    cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-2)
+    
+    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test, cnn_calib_mcdo, cnn_test_mcdo, cnn_calib_logvar, cnn_test_logvar = (
+        train_test_split(
+            truth_hist,
+            qpens_hist,
+            cnn_mcdo_mean,
+            cnn_mean_mcdo_hist,
+            cnn_logvar_mcdo_hist,
+            test_size=1 - config.calibration_split_ratio,
+            random_state=config.calibration_split_seed,
+        )
+    )
+    quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib=cnn_calib, qpens_calib=qpens_calib, cnn_test=cnn_test, qpens_test=qpens_test, normalize=cp_normalized)
+    print(coverage.shape)
 
-    cnn_mcdo_ens_mean = np.mean(cnn_mcdo_hist, axis=-2)
+    cnn_mcdo_epistemic = np.var(cnn_test_mcdo, axis=-1).mean(axis=-1)
+    cnn_mcdo_aleatoric = np.mean(np.exp(cnn_test_logvar), axis=-1).mean(axis=-1)
+    total_uncertainty = cnn_mcdo_aleatoric + cnn_mcdo_epistemic
 
-    cnn_mcdo_mean = np.mean(cnn_mcdo_ens_mean, axis=-1)
-    cnn_mcdo_std = np.std(cnn_mcdo_hist, axis=(-1,-2))
+    auroc = roc_auc_score(coverage, cnn_mcdo_epistemic)
+    print(f"OOD Auroc: {auroc}")
 
-    upper_intervals = cnn_mcdo_mean + cnn_mcdo_std
-    lower_intervals = cnn_mcdo_mean - cnn_mcdo_std
-
-    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
-    mean_coverage = np.mean(coverage)
-
-    print(f"MCDO +-1 std coverage vs QPEns mean: {mean_coverage}")
-    visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
+    #print(f"MCDO +-1 std coverage vs QPEns mean: {mean_coverage}")
+    #visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
 
 
 def check_coverage(
-    test_set: np.ndarray, upper_quantiles: np.ndarray, lower_quantiles: np.ndarray
+    test_set: np.ndarray, upper_quantiles: np.ndarray, lower_quantiles: np.ndarray, ens_mean: bool = True
 ):
     """
     Checks whether test set is inside lower and upper intervals over ensemble dimension.
     """
-    test_ens_mean = np.mean(test_set, axis=-1)
-    coverage = (test_ens_mean > lower_quantiles) & (test_ens_mean < upper_quantiles)
+    if ens_mean:
+        test = np.mean(test_set, axis=-1)
+    else:
+        test = test_set
+    coverage = (test > lower_quantiles) & (test < upper_quantiles)
 
     return coverage
 
