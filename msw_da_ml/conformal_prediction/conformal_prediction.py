@@ -69,11 +69,14 @@ def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize, external_no
     normalization_term = 1
     normalization_term_test = 1.0
     if normalize:
+        height_eps = 0.01
         if external_norm_calib is not None:
             normalization_term = external_norm_calib
             normalization_term_test = external_norm_test
-            normalization_term[:, :, 2] += config.rain_normalization_eps
-            normalization_term_test[:, :, 2] += config.rain_normalization_eps
+            normalization_term[:, :, 2] += 1e-6
+            normalization_term_test[:, :, 2] += 1e-6 
+            normalization_term[:, :, 1] += height_eps
+            normalization_term_test[:, :, 1] += height_eps
         else:
             # Ensemble std if no external norm
             cnn_std = np.std(cnn_calib, axis=-1)
@@ -162,6 +165,7 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = T
         )
     )
     if cp_normalized:
+        mcdo_hist_name += "_normalized"
         if epistemic_norm:
             external_norm_calib = np.mean(np.sqrt(epistemic_calib), axis=-1)
             external_norm_test = np.mean(np.sqrt(epistemic_test), axis=-1)
@@ -178,6 +182,8 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = T
     if ens_mean:
         epistemic_test = epistemic_test.mean(axis=-1)
         alaetoric_test = alaetoric_test.mean(axis=-1)
+
+    visualize_coverage_gridpoints(upper_intervals, lower_intervals, truth_test, qpens_test, cnn_test, mcdo_hist_name)
     
     total_uncertainty = epistemic_test + alaetoric_test
 
@@ -310,7 +316,7 @@ def visualize_quantile_intervals(quantiles: np.ndarray, hist_name: str):
     plt.tight_layout()
 
     base_name = hist_name.replace(".npz", "")
-    save_path = f"{viz_dir}{base_name}_conformal_intervals.png"
+    save_path = f"{viz_dir}/{base_name}_conformal_intervals.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval visualization saved to: {save_path}")
 
@@ -322,7 +328,7 @@ def visualize_coverage_gridpoints(
     qpens,
     cnn,
     hist_name: str,
-    random_seed: int = 10,
+    random_seed: int = 1,
     timestep: int = 50,
 ):
     """
@@ -413,7 +419,7 @@ def visualize_coverage_gridpoints(
 
     base_name = hist_name.replace(".npz", "")
     save_path = (
-        f"{viz_dir}{base_name}_conformal_gridpoints_seed{random_seed}_t{timestep}.png"
+        f"{viz_dir}/{base_name}_conformal_gridpoints_seed{random_seed}_t{timestep}.png"
     )
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Gridpoint visualization saved to: {save_path}")
