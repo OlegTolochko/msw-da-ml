@@ -63,20 +63,26 @@ def conformal_prediction(cp_hist_name: str, normalize: bool = False, num_iterati
     visualize_coverage(coverage_iter_mean, cp_hist_name)
 
 
-def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize):
+def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize, external_norm_calib=None, external_norm_test=None):
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
     normalization_term = 1
-    # Normalization based on variable-wise std
+    normalization_term_test = 1.0
     if normalize:
-        cnn_std = np.std(cnn_calib, axis=-1)
-        # Epsilon is only required for rain, which can be 0
-        cnn_std[:, :, 2] += config.rain_normalization_eps
-        normalization_term = cnn_std
-        for j, var_name in enumerate(variable_names):
-            print(f"{var_name} mean std: {np.mean(cnn_std[:, :, j])}")
-            print(f"{var_name} min std: {np.min(cnn_std[:, :, j])}")
-            print(f"{var_name} max std: {np.max(cnn_std[:, :, j])}")
+        if external_norm_calib is not None:
+            normalization_term = external_norm_calib
+            normalization_term_test = external_norm_test
+            normalization_term[:, :, 2] += config.rain_normalization_eps
+            normalization_term_test[:, :, 2] += config.rain_normalization_eps
+        else:
+            # Ensemble std if no external norm
+            cnn_std = np.std(cnn_calib, axis=-1)
+            cnn_std[:, :, 2] += config.rain_normalization_eps
+            normalization_term = cnn_std
+            
+            cnn_test_std = np.std(cnn_test, axis=-1)
+            cnn_test_std[:, :, 2] += config.rain_normalization_eps
+            normalization_term_test = cnn_test_std
 
     # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
     quantiles = calibrate(
@@ -85,12 +91,6 @@ def cp_main(cnn_calib, qpens_calib, cnn_test, qpens_test, normalize):
         normalization_term=normalization_term,
     )
     cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
-
-    normalization_term_test = 1.0
-    if normalize:
-        cnn_test_std = np.std(cnn_test, axis=-1)
-        cnn_test_std[:, :, 2] += config.rain_normalization_eps
-        normalization_term_test = cnn_test_std
 
     quantiles_expanded = (
         np.tile(
@@ -134,45 +134,58 @@ def cnn_std_cov(cp_hist_name: str):
 
 
 @app.command()
-def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = True):
+def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = True, epistemic_norm: bool = False):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
-    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2) 
+    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2)
+
+    epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-2)
+    aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-2)
+    total_std = np.sqrt(epistemic_var + aleatoric_var)
 
     cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-2)
     
-    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test, cnn_calib_mcdo, cnn_test_mcdo, cnn_calib_logvar, cnn_test_logvar = (
+    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test, std_calib, std_test, epistemic_calib, epistemic_test, aleatoric_calib, alaetoric_test = (
         train_test_split(
             truth_hist,
             qpens_hist,
             cnn_mcdo_mean,
-            cnn_mean_mcdo_hist,
-            cnn_logvar_mcdo_hist,
+            total_std,
+            epistemic_var,
+            aleatoric_var,
             test_size=1 - config.calibration_split_ratio,
             random_state=config.calibration_split_seed,
         )
     )
-    quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib=cnn_calib, qpens_calib=qpens_calib, cnn_test=cnn_test, qpens_test=qpens_test, normalize=cp_normalized)
+    if cp_normalized:
+        if epistemic_norm:
+            external_norm_calib = np.mean(np.sqrt(epistemic_calib), axis=-1)
+            external_norm_test = np.mean(np.sqrt(epistemic_test), axis=-1)
+        else:
+            external_norm_calib = np.mean(std_calib, axis=-1)
+            external_norm_test = np.mean(std_test, axis=-1)
+    else:
+        external_norm_calib = None
+        external_norm_test = None 
+ 
+    quantiles, coverage, upper_intervals, lower_intervals = cp_main(cnn_calib=cnn_calib, qpens_calib=qpens_calib, cnn_test=cnn_test, qpens_test=qpens_test, normalize=cp_normalized, external_norm_calib=external_norm_calib, external_norm_test=external_norm_test)
     visualize_coverage(coverage, hist_name=mcdo_hist_name)
 
-    cnn_mcdo_epistemic = np.var(cnn_test_mcdo, axis=-1)
-    cnn_mcdo_aleatoric = np.mean(np.exp(cnn_test_logvar), axis=-1)
-
     if ens_mean:
-        cnn_mcdo_epistemic = cnn_mcdo_epistemic.mean(axis=-1)
-        cnn_mcdo_aleatoric = cnn_mcdo_aleatoric.mean(axis=-1)
+        epistemic_test = epistemic_test.mean(axis=-1)
+        alaetoric_test = alaetoric_test.mean(axis=-1)
     
-    total_uncertainty = cnn_mcdo_aleatoric + cnn_mcdo_epistemic
+    total_uncertainty = epistemic_test + alaetoric_test
 
     failure_mask = 1 - coverage.astype(int)
 
     failure_flat = failure_mask.flatten()
-    epistemic_flat = cnn_mcdo_epistemic.flatten()
-    aleatoric_flat = cnn_mcdo_aleatoric.flatten()
+    epistemic_flat = epistemic_test.flatten()
+    aleatoric_flat = alaetoric_test.flatten()
     total_flat = total_uncertainty.flatten()
 
     auroc_epistemic = roc_auc_score(failure_flat, epistemic_flat)
