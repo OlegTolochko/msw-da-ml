@@ -204,6 +204,40 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = T
     print(f"  Total:     {auroc_total:.4f}")
 
 
+@app.command()
+def mcdo_std(mcdo_hist_name: str):
+    histories = load_mcdo_histories(mcdo_hist_name)
+
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
+    cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
+    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2)
+
+    epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
+    
+    aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-1)
+    
+    total_std = np.sqrt(epistemic_var + aleatoric_var)
+
+    cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=(-1))
+
+    alpha = 1 - config.calibration_quantile
+    z_score = norm.ppf(1 - alpha / 2)
+    
+    print(f"Target Coverage: {config.calibration_quantile:.0%}")
+    print(f"Z-score used: {z_score:.4f}")
+
+    upper_intervals = cnn_mcdo_mean + z_score * total_std
+    lower_intervals = cnn_mcdo_mean - z_score * total_std
+
+    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals, ens_mean=False)
+    
+    mean_coverage = np.mean(coverage)
+    print(f"Mean Coverage: {mean_coverage:.4f}")
+    
+    visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
+
+
 def check_coverage(
     test_set: np.ndarray, upper_quantiles: np.ndarray, lower_quantiles: np.ndarray, ens_mean: bool = True
 ):
@@ -245,7 +279,11 @@ def calibrate(truth_calib: np.ndarray, cnn_calib: np.ndarray, normalization_term
 
 def visualize_coverage(coverage: np.ndarray, hist_name: str):
     # shape (num_seeds, num_timesteps, 3, 250) -> (num_timesteps, 3)
-    coverage_gridpoint_mean = np.mean(coverage, axis=-1)
+    if coverage.ndim == 5:
+        coverage_gridpoint_mean = np.mean(coverage, axis=(-2, -1))
+    else:
+        coverage_gridpoint_mean = np.mean(coverage, axis=-1)
+    
     coverage_seed_gridpoint_mean = np.mean(coverage_gridpoint_mean, axis=(0))
     coverage_seed_gridpoint_std = np.std(coverage_gridpoint_mean, axis=0)
 
