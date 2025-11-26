@@ -137,6 +137,7 @@ class ExperimentPipelineMCDO:
             cnn_corrected_mean = np.mean(cnn_corrected_mcdo, axis=-1)  # (3, gridpoints, num_ens_members)
             cnn_model.assimilate(cnn_corrected_mean)
 
+            cnn_corrected_logvars = np.stack(cnn_corrected_logvars, axis=-1)
             histories.cnn_analysis_mean.append(cnn_corrected_mcdo.copy())
             histories.cnn_analysis_logvar.append(cnn_corrected_logvars.copy())
 
