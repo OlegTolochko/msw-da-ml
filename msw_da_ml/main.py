@@ -47,6 +47,7 @@ def generate_training_data(
 @app.command()
 def train_cnn_model(
     generated_training_data_name: str,
+    model_name: str = "cnn_model",
     include_timestamp_in_name: bool = True
 ):
     """Trains a CNN model for data assimilation.
@@ -58,7 +59,7 @@ def train_cnn_model(
     include_timestamp_in_name: bool
         Whether to include timestamp in the model name.
     """
-    train_nn(generated_training_data_name, include_timestamp_in_name)
+    train_nn(generated_training_data_name=generated_training_data_name, model_name=model_name, include_timestamp_in_name=include_timestamp_in_name)
 
 
 @app.command()
