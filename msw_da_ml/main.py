@@ -160,6 +160,7 @@ def run_cqr_prediction(cqr_hist_name: str):
 def compare_cp_vs_cqr(
     cp_hist_name: str,
     cqr_hist_name: str,
+    mcdo_hist_name: str = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False
 ):
@@ -175,7 +176,7 @@ def compare_cp_vs_cqr(
     normalize_cp: bool
         Whether to also run normalized CP for comparison.
     """
-    generate_comparison_analysis(cp_hist_name, cqr_hist_name, normalize_cp, include_cnn_std)
+    generate_comparison_analysis(cp_hist_name, cqr_hist_name, mcdo_hist_name, normalize_cp, include_cnn_std)
 
 
 @app.command()

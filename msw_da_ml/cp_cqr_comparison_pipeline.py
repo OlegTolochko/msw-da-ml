@@ -2,10 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
+from scipy.stats import norm
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories as load_cp_histories
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
     load_histories as load_qr_histories,
+)
+from msw_da_ml.conformal_prediction.mcdo_data_generation import (
+    load_histories as load_mcdo_histories,
 )
 from msw_da_ml.conformal_prediction.conformal_prediction import calibrate, check_coverage
 from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
@@ -22,10 +26,14 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 def generate_comparison_analysis(
-    cp_hist_name: str, cqr_hist_name: str, normalize_cp: bool = True, include_cnn_std: bool = False
+    cp_hist_name: str,
+    cqr_hist_name: str,
+    mcdo_hist_name: str = None,
+    normalize_cp: bool = True,
+    include_cnn_std: bool = False,
 ):
     """
-    Generate comparison plots between CP, normalized CP, and CQR methods.
+    Generate comparison plots between CP, normalized CP, CQR, and optionally MCDO methods.
     """
     # CP data
     cp_histories = load_cp_histories(cp_hist_name)
@@ -110,7 +118,9 @@ def generate_comparison_analysis(
         cnn_std_upper_intervals = cnn_ens_mean + cnn_ens_std
         cnn_std_lower_intervals = cnn_ens_mean - cnn_ens_std
 
-        cnn_std_coverage = check_coverage(cp_qpens, cnn_std_upper_intervals, cnn_std_lower_intervals)
+        cnn_std_coverage = check_coverage(
+            cp_qpens, cnn_std_upper_intervals, cnn_std_lower_intervals
+        )
 
     # Run CQR
     cqr_adjustments = calibrate_quantile_intervals_symmetric(
@@ -119,9 +129,33 @@ def generate_comparison_analysis(
     cqr_lower_adj, cqr_upper_adj = apply_symmetric_quantile_adjustments(
         cqr_lower_test, cqr_upper_test, cqr_adjustments
     )
-    print(cqr_lower_adj.shape)
     cqr_coverage = check_quantile_coverage(cqr_qpens_test, cqr_lower_adj, cqr_upper_adj)
-    print(cqr_coverage.shape)
+
+    # Run MCDO STD
+    if mcdo_hist_name:
+        mcdo_histories = load_mcdo_histories(mcdo_hist_name)
+        mcdo_qpens = np.asarray([h.qpens_analysis for h in mcdo_histories])
+        mcdo_cnn_mean = np.asarray([h.cnn_analysis_mean for h in mcdo_histories])
+        mcdo_cnn_logvar = np.asarray([h.cnn_analysis_logvar for h in mcdo_histories])
+        mcdo_cnn_logvar = np.transpose(mcdo_cnn_logvar, (0,1,3,4,5,2))
+
+        epistemic_var = np.var(mcdo_cnn_mean, axis=-1)
+        aleatoric_var = np.mean(np.exp(mcdo_cnn_logvar), axis=-1)
+        total_std = np.sqrt(epistemic_var + aleatoric_var)
+
+        total_std_mean = np.mean(total_std, axis=-1)
+
+        mcdo_mean_pred = np.mean(mcdo_cnn_mean, axis=(-2, -1))
+
+        alpha = 1 - config.calibration_quantile
+        z_score = norm.ppf(1 - alpha / 2)
+
+        mcdo_upper = mcdo_mean_pred + z_score * total_std_mean
+        mcdo_lower = mcdo_mean_pred - z_score * total_std_mean
+
+        mcdo_coverage = check_coverage(
+            mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=True
+        )
 
     # Comparison plots:
     methods = ["CP", "CQR"]
@@ -137,6 +171,11 @@ def generate_comparison_analysis(
         methods.append("CNN STD")
         coverages.append(cnn_std_coverage)
         intervals.append((cnn_std_lower_intervals, cnn_std_upper_intervals))
+
+    if mcdo_hist_name:
+        methods.append("MCDO STD")
+        coverages.append(mcdo_coverage)
+        intervals.append((mcdo_lower, mcdo_upper))
 
     plot_coverage_comparison(coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}")
     plot_interval_width_comparison(
@@ -155,7 +194,7 @@ def plot_coverage_comparison(coverages, method_names, save_name):
         for j, (coverage, method_name) in enumerate(zip(coverages, method_names)):
             ax = axes[i, j] if len(method_names) > 1 else axes[i]
 
-            print(f"{save_name}, {method_names}: {coverage.shape}")
+            # print(f"{save_name}, {method_names}: {coverage.shape}")
 
             coverage_mean = np.mean(coverage[:, :, i, :], axis=(0, -1))
             coverage_std = np.std(np.mean(coverage[:, :, i, :], axis=-1), axis=0)
@@ -198,7 +237,9 @@ def plot_interval_width_comparison(intervals, method_names, save_name):
     """
     Creates 3x3 interval width + std comparison plot (3 variables x 3 methods).
     """
-    fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12), sharey="row")
+    fig, axes = plt.subplots(
+        3, len(method_names), figsize=(5 * len(method_names), 12), sharey="row"
+    )
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
     for i, var_name in enumerate(variable_names):
