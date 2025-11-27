@@ -205,20 +205,32 @@ def mcdo_cp(mcdo_hist_name: str, cp_normalized: bool = False, ens_mean: bool = T
 
 
 @app.command()
-def mcdo_std(mcdo_hist_name: str):
+def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
 
-    epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
-    
-    aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-1)
-    
-    total_std = np.sqrt(epistemic_var + aleatoric_var)
+    if ens_mean:
+        cnn_mean_mcdo_hist = np.mean(cnn_mean_mcdo_hist, axis=-2)
+        
+        cnn_vars = np.exp(cnn_logvar_mcdo_hist)
+        cnn_vars_mean = np.mean(cnn_vars, axis=-2)
+        
+        epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
+        aleatoric_var = np.mean(cnn_vars_mean, axis=-1)
+        
+        cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-1)
+        total_std = np.sqrt(epistemic_var + aleatoric_var)
 
-    cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=(-1))
+    else:
+        epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
+        aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-1)
+        total_std = np.sqrt(epistemic_var + aleatoric_var)
+        
+        cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-1)
+
 
     alpha = 1 - config.calibration_quantile
     z_score = norm.ppf(1 - alpha / 2)
@@ -229,7 +241,7 @@ def mcdo_std(mcdo_hist_name: str):
     upper_intervals = cnn_mcdo_mean + z_score * total_std
     lower_intervals = cnn_mcdo_mean - z_score * total_std
 
-    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals, ens_mean=False)
+    coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals, ens_mean=ens_mean)
     
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage:.4f}")
@@ -252,25 +264,30 @@ def check_coverage(
     return coverage
 
 
-def calibrate(truth_calib: np.ndarray, cnn_calib: np.ndarray, normalization_term):
+def calibrate(truth_calib: np.ndarray, cnn_calib: np.ndarray, normalization_term, ens_mean: bool = True):
     """
     Calculates calibration quantiles for conformal prediction.
 
     Returns:
         np.ndarray: Quantiles for each variable. Shape: (num_timesteps, 3)
     """
-    # caluclate means for ensemble dim (-1)
-    truth_ens_mean = np.mean(truth_calib, axis=(-1))
-    cnn_ens_mean = np.mean(cnn_calib, axis=(-1))
+    if ens_mean:
+        # caluclate means for ensemble dim (-1)
+        truth_calib = np.mean(truth_calib, axis=(-1))
+        cnn_calib = np.mean(cnn_calib, axis=(-1))
 
-    cnn_truth_mean_diff = np.abs(truth_ens_mean - cnn_ens_mean) / normalization_term
-    print(np.mean(cnn_truth_mean_diff[:, :, 0]))
-    print(np.mean(cnn_truth_mean_diff[:, :, 1]))
-    print(np.mean(cnn_truth_mean_diff[:, :, 2]))
+    cnn_truth_mean_diff = np.abs(truth_calib - cnn_calib) / normalization_term
+    print(f"Mean diff u: {np.mean(cnn_truth_mean_diff[:, :, 0]):.6f}")
+    print(f"Mean diff h: {np.mean(cnn_truth_mean_diff[:, :, 1]):.6f}")
+    print(f"Mean diff r: {np.mean(cnn_truth_mean_diff[:, :, 2]):.6f}")
 
     # wind, water height and rain quantiles for each timestep
+    if ens_mean:
+        quantile_axes = (0, -1)
+    else:
+        quantile_axes = (0, -2, -1)
     quantiles = np.quantile(
-        cnn_truth_mean_diff, q=config.calibration_quantile, axis=(0, -1)
+        cnn_truth_mean_diff, q=config.calibration_quantile, axis=quantile_axes
     )  # shape: (num_timesteps, 3)
 
     return quantiles
