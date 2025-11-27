@@ -211,7 +211,6 @@ def mcdo_std(mcdo_hist_name: str):
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
-    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2)
 
     epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
     
