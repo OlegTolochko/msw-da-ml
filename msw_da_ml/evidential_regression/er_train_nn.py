@@ -181,6 +181,8 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
             summed_train_loss += loss
             num_processed_train += 1
             loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
         summed_val_loss = 0
