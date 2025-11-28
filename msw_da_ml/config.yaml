@@ -57,6 +57,7 @@ training_config:
   batch_size: 32
   learning_rate: 0.001
   epochs: 100
+  mcdo_dropout: 0.1
   
 inference_config:
   inference_seed: 43 # difference seed, to ensure different setting
@@ -64,7 +65,7 @@ inference_config:
 
 experiment_config:
   base_seed: 43
-  num_seeds: 2
+  num_seeds: 10
   num_inference_steps: 200
   num_ensemble_members: 10
 

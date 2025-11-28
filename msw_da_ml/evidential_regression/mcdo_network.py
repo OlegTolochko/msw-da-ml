@@ -1,0 +1,58 @@
+import torch.nn.functional as F
+import torch.nn as nn
+
+from msw_da_ml.settings import load_settings
+
+settings = load_settings()
+network_config = settings.network_config
+
+
+class MCDOCNNModel(nn.Module):
+    def __init__(self, dropout=0.1):
+        super().__init__()
+
+        layers = []
+        layers += [
+            nn.Conv1d(
+                in_channels=network_config.in_channels,
+                out_channels=network_config.hidden_channels,
+                kernel_size=network_config.kernel_size,
+                padding=network_config.kernel_size // 2,
+                padding_mode="circular",
+            ),
+            nn.SELU(),
+            nn.Dropout(p=dropout)
+        ]
+
+        for i in range(network_config.num_layers - 2):
+            layers += [
+                nn.Conv1d(
+                    in_channels=network_config.hidden_channels,
+                    out_channels=network_config.hidden_channels,
+                    kernel_size=network_config.kernel_size,
+                    padding=network_config.kernel_size // 2,
+                    padding_mode="circular",
+                ),
+                nn.SELU(),
+                nn.Dropout(p=dropout)
+            ]
+
+        layers += [
+            nn.Conv1d(
+                in_channels=network_config.hidden_channels,
+                out_channels=6,
+                kernel_size=network_config.kernel_size,
+                padding=network_config.kernel_size // 2,
+                padding_mode="circular",
+            ),
+        ]
+
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.network(x)
+        mean, var = x[:, :3], x[:, 3:]
+
+        mean[:, 1] = F.relu(mean[:, 1])
+        var = F.softplus(var)
+        return mean, var

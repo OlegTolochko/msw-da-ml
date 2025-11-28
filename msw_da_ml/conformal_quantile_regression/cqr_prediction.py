@@ -130,17 +130,34 @@ def cqr_prediction(hist_name: str):
 
 
 def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
-    num_seeds, *mid, num_grid_points = scores.shape
-    s = scores.reshape(num_seeds * num_grid_points, *mid)
+    """
+    Calculate empirical quantile from scores.
+        
+    Returns:
+        Quantile values of shape (time,)
+    """
+    if scores.ndim == 3:
+        # Shape: (seeds, time, grid)
+        num_seeds, num_time, num_grid = scores.shape
+        # Reshape to (seeds * grid, time)
+        s = scores.transpose(0, 2, 1).reshape(num_seeds * num_grid, num_time)
+    elif scores.ndim == 4:
+        # Shape: (seeds, time, grid, ens)
+        num_seeds, num_time, num_grid, num_ens = scores.shape
+        # Reshape to (seeds * grid * ens, time)
+        s = scores.transpose(0, 2, 3, 1).reshape(num_seeds * num_grid * num_ens, num_time)
+    else:
+        raise ValueError(f"Unexpected scores shape: {scores.shape}")
+    
     m = s.shape[0]
     k = int(np.ceil((1.0 - alpha) * (m + 1))) - 1
     k = np.clip(k, 0, m - 1)
-    s_part = np.partition(s, k, axis=0) # Puts k-th smallest value in k-th position in array
-    return s_part[k]
+    s_part = np.partition(s, k, axis=0)
+    return s_part[k]  # Shape: (time,)
 
 
 def calibrate_quantile_intervals_symmetric(
-    truth_calib, cnn_lower_calib, cnn_upper_calib
+    truth_calib, cnn_lower_calib, cnn_upper_calib, ens_mean: bool = True
 ):
     """
     Calibrate quantile intervals using conformal prediction.
@@ -148,18 +165,18 @@ def calibrate_quantile_intervals_symmetric(
     Returns:
         Tuple of adjustment factors for lower and upper quantiles
     """
-
-    truth_mean = np.mean(truth_calib, axis=-1)
-    cnn_lower_mean = np.mean(cnn_lower_calib, axis=-1)
-    cnn_upper_mean = np.mean(cnn_upper_calib, axis=-1)
+    if ens_mean:
+        truth_calib = np.mean(truth_calib, axis=-1)
+        cnn_lower_calib = np.mean(cnn_lower_calib, axis=-1)
+        cnn_upper_calib = np.mean(cnn_upper_calib, axis=-1)
 
     alpha = 1.0 - config.calibration_quantile
     quantile_corrections = []
 
     for var_idx in range(3):
-        E_var = np.max(
-            cnn_lower_mean[:, :, var_idx, :] - truth_mean[:, :, var_idx, :],
-            truth_mean[:, :, var_idx, :] - cnn_upper_mean[:, :, var_idx, :],
+        E_var = np.maximum(
+            cnn_lower_calib[:, :, var_idx, ...] - truth_calib[:, :, var_idx, ...],
+            truth_calib[:, :, var_idx, ...] - cnn_upper_calib[:, :, var_idx, ...],
         )
 
         quantile_correction_var = calculate_empirical_quantile(E_var, alpha=alpha)
@@ -169,22 +186,28 @@ def calibrate_quantile_intervals_symmetric(
 
 
 def apply_symmetric_quantile_adjustments(
-    cnn_lower_test, cnn_upper_test, quantile_correction
+    cnn_lower_test, cnn_upper_test, quantile_correction, ens_mean: bool = True,
 ):
-    cnn_lower_test_mean = np.mean(cnn_lower_test, axis=(-1))
-    cnn_upper_test_mean = np.mean(cnn_upper_test, axis=(-1))
-    quantile_correction_expanded = quantile_correction[None, ..., None]
-    cnn_lower_adjusted = cnn_lower_test_mean - quantile_correction_expanded
-    cnn_upper_adjusted = cnn_upper_test_mean + quantile_correction_expanded
+    if ens_mean:
+        cnn_lower_test = np.mean(cnn_lower_test, axis=(-1))
+        cnn_upper_test = np.mean(cnn_upper_test, axis=(-1))
+        quantile_correction_expanded = quantile_correction[None, ..., None]
+    else:
+        quantile_correction_expanded = quantile_correction[None, ..., None, None]
+    cnn_lower_adjusted = cnn_lower_test - quantile_correction_expanded
+    cnn_upper_adjusted = cnn_upper_test + quantile_correction_expanded
 
     return cnn_lower_adjusted, cnn_upper_adjusted
 
 
-def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles):
+def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles, ens_mean: bool = True):
     """
-    Check coverage of quantile intervals.
+    Checks coverage of quantile intervals.
     """
-    test_mean = np.mean(test_set, axis=-1)
+    if ens_mean:
+        test_mean = np.mean(test_set, axis=-1)
+    else:
+        test_mean = test_set
 
     var_coverage = []
     for var in range(3):
@@ -192,7 +215,7 @@ def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles):
             (test_mean[:, :, var] >= lower_quantiles[:, :, var])
             & (test_mean[:, :, var] <= upper_quantiles[:, :, var])
         )
-    return np.stack(var_coverage, axis=-2)
+    return np.stack(var_coverage, axis=2)
 
 
 def visualize_quantile_coverage(coverage, hist_name):
@@ -343,6 +366,4 @@ def visualize_quantile_gridpoints(
 
 
 if __name__ == "__main__":
-    raw_quantile_conformal_prediction(
-        "quantile_hist_quantile_model_20250818T150026.pth_20250819T155037_43_2"
-    )
+    app()

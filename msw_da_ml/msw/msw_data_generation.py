@@ -163,15 +163,28 @@ class DataGenerationPipeline:
 
     def _generate_animations(self, state: DataGenerationState, pipeline_state_save_name: str):
         """Generate output animations"""
-        kf_animation_path = get_output_dir(global_config.generated_data_animations_out_filename)
-        qp_animation_path = get_output_dir(global_config.generated_data_animations_out_filename)
-        f"{pipeline_state_save_name}_evolution_kf.mp4"
-        f"{pipeline_state_save_name}_model_evolution_qp.mp4"
+        animations_dir = get_output_dir(global_config.generated_data_animations_out_filename)
+        
+        kf_animation_path = os.path.join(
+            animations_dir, 
+            f"{pipeline_state_save_name}_evolution_kf.mp4"
+        )
+        qp_animation_path = os.path.join(
+            animations_dir,
+            f"{pipeline_state_save_name}_evolution_qp.mp4"
+        )
+        truth_animation_path = os.path.join(
+            animations_dir,
+            f"{pipeline_state_save_name}_evolution_truth.mp4"
+        )
+        
         animate_evolution_from_history(
-            state.histories["kf"], str(kf_animation_path)
+            state.histories["kf"], kf_animation_path
         )
         animate_evolution_from_history(
-            state.histories["qp"], str(qp_animation_path)
+            state.histories["qp"], qp_animation_path
         )
         state_history_truth = state.models["truth"].get_history()
-        animate_evolution_from_history(state_history_truth)
+        animate_evolution_from_history(state_history_truth, truth_animation_path)
+        print(f"Evolution Animations for EnKF, QPens and Truth saved to: {animations_dir}")
+

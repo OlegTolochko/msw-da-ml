@@ -65,6 +65,7 @@ class TrainingConfig(BaseModel):
     batch_size: int
     learning_rate: float
     epochs: int
+    mcdo_dropout: float
 
 
 class InferenceConfig(BaseModel):
