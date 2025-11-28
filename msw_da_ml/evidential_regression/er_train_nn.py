@@ -142,7 +142,7 @@ def train_mcdo_nn(generated_training_data_name: str, model_name: str = "mcdo_cnn
     train(generated_training_data_name, model, model_name, include_timestamp_in_name)
 
 
-def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool):
+def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool, warmup: bool):
     """
     Base Training method
     """
@@ -161,7 +161,10 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
         generated_training_data_name, device, model_name, normalization_path=normalization_path
     )
 
-    criterion = GaussianNLL()
+    nll_criterion = GaussianNLL()
+    if warmup:
+        mse_criterion = torch.nn.MSELoss()
+        warmup_epochs = 20
     optimizer = torch.optim.Adam(
         params=model.parameters(), lr=training_config.learning_rate
     )
@@ -176,8 +179,15 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
         for kf_train_batch, qp_train_batch in train_lodar:
             model.zero_grad()
 
-            pred_mean, pred_var = model(kf_train_batch)
-            loss = criterion(qp_train_batch, pred_mean, pred_var)
+            pred_mean, pred_logvar = model(kf_train_batch)
+            if warmup:
+                if epoch < warmup_epochs:
+                    loss = mse_criterion(pred_mean, qp_train_batch)
+                else:
+                    loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
+            else: 
+                loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
+            
             summed_train_loss += loss
             num_processed_train += 1
             loss.backward()
@@ -192,8 +202,14 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
         model.eval()
         with torch.no_grad():
             for kf_val_batch, qp_val_batch in val_loader:
-                pred_mean_val, pred_var_val = model(kf_val_batch)
-                loss = criterion(qp_val_batch, pred_mean_val, pred_var_val)
+                pred_mean_val, pred_logvar_val = model(kf_val_batch)
+                if warmup:
+                    if epoch < warmup_epochs:
+                        loss = mse_criterion(pred_mean_val, qp_val_batch)
+                    else:
+                        loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                else:
+                    loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
                 summed_val_loss += loss
                 num_processed_val += 1
 
