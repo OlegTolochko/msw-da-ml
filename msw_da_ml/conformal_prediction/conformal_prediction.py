@@ -209,6 +209,7 @@ def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
     histories = load_mcdo_histories(mcdo_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    truth_hist = np.asarray([history.truth for history in histories])
     cnn_mean_mcdo_hist = np.asarray([history.cnn_analysis_mean for history in histories])
     cnn_logvar_mcdo_hist = np.asarray([history.cnn_analysis_logvar for history in histories])
 
@@ -247,7 +248,15 @@ def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
     print(f"Mean Coverage: {mean_coverage:.4f}")
     
     visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
-
+    visualize_coverage_gridpoints(
+        upper_intervals, 
+        lower_intervals, 
+        truth_hist, 
+        qpens_hist, 
+        cnn_mcdo_mean,
+        mcdo_hist_name + "_mcdo_std",
+        cnn_std=total_std,
+    )
 
 def check_coverage(
     test_set: np.ndarray, upper_quantiles: np.ndarray, lower_quantiles: np.ndarray, ens_mean: bool = True
@@ -382,22 +391,47 @@ def visualize_coverage_gridpoints(
     qpens,
     cnn,
     hist_name: str,
+    cnn_std: np.ndarray = None,
     random_seed: int = 1,
     timestep: int = 50,
 ):
     """
     Visualizes coverage performance for a set random seed and timestamp
     """
-    truth_ens_mean = np.mean(truth, axis=-1)
-    qpens_ens_mean = np.mean(qpens, axis=-1)
-    cnn_ens_mean = np.mean(cnn, axis=-1)
+    if truth.ndim == 5:
+        truth_ens_mean = np.mean(truth, axis=-1)
+    else:
+        truth_ens_mean = truth
+        
+    if qpens.ndim == 5:
+        qpens_ens_mean = np.mean(qpens, axis=-1)
+    else:
+        qpens_ens_mean = qpens
+
+    if cnn.ndim == 5:
+        cnn_ens_mean = np.mean(cnn, axis=-1)
+        if cnn_std is None:
+            cnn_std = np.std(cnn, axis=-1)
+    else:
+        cnn_ens_mean = cnn
+        if cnn_std is None:
+            cnn_std = np.zeros_like(cnn)
+
+    # Handle ensemble dimension for intervals
+    if upper_interval.ndim == 5:
+        upper_interval = np.mean(upper_interval, axis=-1)
+    if lower_interval.ndim == 5:
+        lower_interval = np.mean(lower_interval, axis=-1)
 
     upper_interval_seed_timestep = upper_interval[random_seed, timestep]
     lower_interval_seed_timestep = lower_interval[random_seed, timestep]
     truth_seed_timestep = truth_ens_mean[random_seed, timestep]
     qpens_seed_timestep = qpens_ens_mean[random_seed, timestep]
     cnn_seed_timestep = cnn_ens_mean[random_seed, timestep]
-    cnn_std_seed_timestep = np.std(cnn[random_seed, timestep], axis=-1)
+    
+    if cnn_std.ndim == 5:
+        cnn_std = np.mean(cnn_std, axis=-1)
+    cnn_std_seed_timestep = cnn_std[random_seed, timestep]
 
     fig, axes = plt.subplots(3, 1, figsize=(15, 15))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
