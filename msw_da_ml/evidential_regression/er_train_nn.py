@@ -14,7 +14,8 @@ from msw_da_ml.msw.msw_data_generation import (
 )
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
-from msw_da_ml.evidential_regression.losses import GaussianNLL
+from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
+from msw_da_ml.evidential_regression.losses import GaussianNLL, NIGLoss
 
 
 app = App()
@@ -148,7 +149,22 @@ def train_mcdo_nn(
     """
     dropout = training_config.mcdo_dropout
     model = MCDOCNNModel(dropout=dropout)
-    train(generated_training_data_name, model, model_name, include_timestamp_in_name)
+    train(generated_training_data_name, model, model_name, include_timestamp_in_name, warmup=True)
+
+
+@app.command()
+def train_nig_nn(
+    generated_training_data_name: str,
+    model_name: str = "nig_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
+    """
+    Trains the NIG CNN Model based on training data given from a pipeline state.
+    Saves the trained model weights under the trained_nn_model_path set in the config.
+    """
+    dropout = training_config.mcdo_dropout
+    model = NIGCNNModel(dropout=dropout)
+    train(generated_training_data_name, model, model_name, include_timestamp_in_name, warmup=False)
 
 
 def train(
@@ -180,6 +196,7 @@ def train(
     )
 
     nll_criterion = GaussianNLL()
+    nig_criterion = NIGLoss()
     if warmup:
         mse_criterion = torch.nn.MSELoss()
         warmup_epochs = 20
@@ -197,14 +214,18 @@ def train(
         for kf_train_batch, qp_train_batch in train_lodar:
             model.zero_grad()
 
-            pred_mean, pred_logvar = model(kf_train_batch)
-            if warmup:
-                if epoch < warmup_epochs:
-                    loss = mse_criterion(pred_mean, qp_train_batch)
+            if isinstance(model, NIGCNNModel):
+                pred_gamma, pred_nu, pred_alpha, pred_beta = model(kf_train_batch)
+                loss = nig_criterion(pred_gamma, pred_nu, pred_alpha, pred_beta, qp_train_batch)
+            else:
+                pred_mean, pred_logvar = model(kf_train_batch)
+                if warmup:
+                    if epoch < warmup_epochs:
+                        loss = mse_criterion(pred_mean, qp_train_batch)
+                    else:
+                        loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
                 else:
                     loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
-            else:
-                loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
 
             summed_train_loss += loss
             num_processed_train += 1
@@ -220,16 +241,20 @@ def train(
         model.eval()
         with torch.no_grad():
             for kf_val_batch, qp_val_batch in val_loader:
-                pred_mean_val, pred_logvar_val = model(kf_val_batch)
-                if warmup:
-                    if epoch < warmup_epochs:
-                        loss = mse_criterion(pred_mean_val, qp_val_batch)
-                    else:
-                        loss = nll_criterion(
-                            qp_val_batch, pred_mean_val, pred_logvar_val
-                        )
+                if isinstance(model, NIGCNNModel):
+                    pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val = model(kf_val_batch)
+                    loss = nig_criterion(pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val, qp_val_batch)
                 else:
-                    loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                    pred_mean_val, pred_logvar_val = model(kf_val_batch)
+                    if warmup:
+                        if epoch < warmup_epochs:
+                            loss = mse_criterion(pred_mean_val, qp_val_batch)
+                        else:
+                            loss = nll_criterion(
+                                qp_val_batch, pred_mean_val, pred_logvar_val
+                            )
+                    else:
+                        loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
                 summed_val_loss += loss
                 num_processed_val += 1
 
