@@ -11,6 +11,9 @@ from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.conformal_prediction.mcdo_data_generation import (
     load_histories as load_mcdo_histories,
 )
+from msw_da_ml.evidential_regression.er_nig_data_generation import (
+    load_histories as load_nig_histories
+)
 
 app = App()
 
@@ -314,6 +317,69 @@ def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
         qpens_hist,
         cnn_mcdo_mean,
         mcdo_hist_name + "_mcdo_std",
+        cnn_std=total_std,
+    )
+
+
+@app.command()
+def nig_std(nig_hist_name: str, ens_mean: bool = False):
+    histories = load_nig_histories(nig_hist_name)
+
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    truth_hist = np.asarray([history.truth for history in histories])
+    cnn_gamma = np.asarray(
+        [history.cnn_analysis_gamma for history in histories]
+    )
+    cnn_nu = np.asarray(
+        [history.cnn_analysis_nu for history in histories]
+    )
+    cnn_alpha = np.asarray(
+        [history.cnn_analysis_alpha for history in histories]
+    )
+    cnn_beta = np.asarray(
+        [history.cnn_analysis_beta for history in histories]
+    )
+
+    if ens_mean:
+        cnn_gamma = np.mean(cnn_gamma, axis=-1)
+        cnn_nu = np.mean(cnn_nu, axis=-1)
+        cnn_alpha = np.mean(cnn_alpha, axis=-1)
+        cnn_beta = np.mean(cnn_beta, axis=-1)
+
+        aleatoric_var = cnn_beta/(cnn_alpha - 1)
+        epistemic_var = aleatoric_var/cnn_nu
+
+        total_std = np.sqrt(epistemic_var + aleatoric_var)
+
+    else:
+        aleatoric_var = cnn_beta/(cnn_alpha - 1 + 1e-6)
+        epistemic_var = aleatoric_var/cnn_nu
+        total_std = np.sqrt(epistemic_var + aleatoric_var)
+
+    alpha = 1 - config.calibration_quantile
+    z_score = norm.ppf(1 - alpha / 2)
+
+    print(f"Target Coverage: {config.calibration_quantile:.0%}")
+    print(f"Z-score used: {z_score:.4f}")
+
+    upper_intervals = cnn_gamma + z_score * total_std
+    lower_intervals = cnn_gamma - z_score * total_std
+
+    coverage = check_coverage(
+        qpens_hist, upper_intervals, lower_intervals, ens_mean=ens_mean
+    )
+
+    mean_coverage = np.mean(coverage)
+    print(f"Mean Coverage: {mean_coverage:.4f}")
+
+    visualize_coverage(coverage, nig_hist_name + "_mcdo_std")
+    visualize_coverage_gridpoints(
+        upper_intervals,
+        lower_intervals,
+        truth_hist,
+        qpens_hist,
+        cnn_gamma,
+        nig_hist_name + "_mcdo_std",
         cnn_std=total_std,
     )
 
