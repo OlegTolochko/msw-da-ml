@@ -13,8 +13,12 @@ app = App()
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_quantile_nn_model_path = get_output_dir(settings.global_config.trained_quantile_nn_model_out_filename)
-quantile_normalization_path = get_output_dir(settings.global_config.quantile_normalization_out_filename)
+trained_quantile_nn_model_path = get_output_dir(
+    settings.global_config.trained_quantile_nn_model_out_filename
+)
+quantile_normalization_path = get_output_dir(
+    settings.global_config.quantile_normalization_out_filename
+)
 
 
 def get_most_recent_cqr_model_name():
@@ -48,8 +52,9 @@ def load_cqr_trained_model(load_model_name: str, device):
     model.eval()
 
     load_normalization_name = load_model_name.removesuffix(".pth")
-    norm_stats_path = os.path.join(quantile_normalization_path, f"norm_{load_normalization_name}.pt")
+    norm_stats_path = os.path.join(
+        quantile_normalization_path, f"norm_{load_normalization_name}.pt"
+    )
     norm_stats = torch.load(norm_stats_path, map_location=device)
 
     return model, norm_stats
-

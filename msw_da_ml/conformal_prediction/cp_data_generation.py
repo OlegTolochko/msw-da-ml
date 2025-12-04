@@ -42,7 +42,9 @@ class ExperimentPipeline:
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self.model, self.norm_stats = load_trained_model(
-            load_model_name= load_model_name, name_begins_with="model", device=self.device
+            load_model_name=load_model_name,
+            name_begins_with="model",
+            device=self.device,
         )
 
     def run_single_experiment(

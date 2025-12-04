@@ -51,7 +51,7 @@ class ExperimentPipelineMCDO:
         self.model, self.norm_stats = load_trained_model(
             MCDOCNNModel, load_model_name, name_begins_with, self.device
         )
-        self.model.train() # set to train mode for MCDO
+        self.model.train()  # set to train mode for MCDO
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
@@ -134,7 +134,9 @@ class ExperimentPipelineMCDO:
             # Stack along last axis to get MCDO samples as an ensemble dimension
             cnn_corrected_mcdo = np.stack(cnn_corrected_mcdo, axis=-1)
 
-            cnn_corrected_mean = np.mean(cnn_corrected_mcdo, axis=-1)  # (3, gridpoints, num_ens_members)
+            cnn_corrected_mean = np.mean(
+                cnn_corrected_mcdo, axis=-1
+            )  # (3, gridpoints, num_ens_members)
             cnn_model.assimilate(cnn_corrected_mean)
 
             cnn_corrected_logvars = np.stack(cnn_corrected_logvars, axis=-1)
@@ -142,9 +144,12 @@ class ExperimentPipelineMCDO:
             histories.cnn_analysis_logvar.append(cnn_corrected_logvars.copy())
 
         return histories
-    
+
     def _apply_cnn_correction_mcdo(
-        self, assimilated_state: np.ndarray, observation_locations: np.ndarray, num_iterations: int
+        self,
+        assimilated_state: np.ndarray,
+        observation_locations: np.ndarray,
+        num_iterations: int,
     ) -> np.ndarray:
         corrections = []
         correction_logvars = []
@@ -165,18 +170,22 @@ class ExperimentPipelineMCDO:
             normalized_tensor = (state_tensor - self.norm_stats["mean_in"]) / (
                 self.norm_stats["std_in"] + 1e-8
             )
-            
+
             with torch.no_grad():
-                corrected_norm_mean, corrected_norm_logvar = self.model(normalized_tensor)
+                corrected_norm_mean, corrected_norm_logvar = self.model(
+                    normalized_tensor
+                )
 
             corrected_tensor = (
                 corrected_norm_mean * self.norm_stats["std_out"]
             ) + self.norm_stats["mean_out"]
-            corrected_tensor_logvar = (
-                corrected_norm_logvar + 2*torch.log(self.norm_stats["std_out"] + 1e-8)
+            corrected_tensor_logvar = corrected_norm_logvar + 2 * torch.log(
+                self.norm_stats["std_out"] + 1e-8
             )
             corrected_state = corrected_tensor.permute(1, 2, 0).cpu().numpy()
-            corrected_state_logvars = corrected_tensor_logvar.permute(1,2,0).cpu().numpy()
+            corrected_state_logvars = (
+                corrected_tensor_logvar.permute(1, 2, 0).cpu().numpy()
+            )
             corrections.append(corrected_state)
             correction_logvars.append(corrected_state_logvars)
 
@@ -250,6 +259,7 @@ def load_histories(load_name: str) -> List[ExperimentHistoryMCDO]:
         histories.append(history)
 
     return histories
+
 
 @app.command()
 def generate_experiment_data(model_name: str = ""):

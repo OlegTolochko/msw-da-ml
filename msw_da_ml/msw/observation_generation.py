@@ -39,7 +39,7 @@ def generate_observation(
     """
     num_grid_points = truth_state.shape[1]
     ensemble_shape = (num_ensemble_members, num_grid_points)
-    truth_perturb_shape = (num_grid_points)
+    truth_perturb_shape = num_grid_points
 
     u_error_truth = random_generator.normal(
         loc=obs_config.u_error_mean,

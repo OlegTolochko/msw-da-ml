@@ -8,7 +8,10 @@ from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
+from msw_da_ml.msw.msw_data_generation import (
+    DataGenerationPipeline,
+    DataGenerationState,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
 from msw_da_ml.evidential_regression.losses import GaussianNLL
@@ -19,7 +22,9 @@ app = App()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+trained_nn_model_path = get_output_dir(
+    settings.global_config.trained_nn_model_out_filename
+)
 normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
@@ -132,7 +137,11 @@ def get_train_val_loaders(
 
 
 @app.command()
-def train_mcdo_nn(generated_training_data_name: str, model_name: str = "mcdo_cnn_model", include_timestamp_in_name: bool = True):
+def train_mcdo_nn(
+    generated_training_data_name: str,
+    model_name: str = "mcdo_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
     """
     Trains the MCDO CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
@@ -142,7 +151,13 @@ def train_mcdo_nn(generated_training_data_name: str, model_name: str = "mcdo_cnn
     train(generated_training_data_name, model, model_name, include_timestamp_in_name)
 
 
-def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool, warmup: bool):
+def train(
+    generated_training_data_name: str,
+    model: torch.nn.Module,
+    model_name: str,
+    include_timestamp_in_name: bool,
+    warmup: bool,
+):
     """
     Base Training method
     """
@@ -155,10 +170,13 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
- 
+
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        generated_training_data_name, device, model_name, normalization_path=normalization_path
+        generated_training_data_name,
+        device,
+        model_name,
+        normalization_path=normalization_path,
     )
 
     nll_criterion = GaussianNLL()
@@ -185,9 +203,9 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
                     loss = mse_criterion(pred_mean, qp_train_batch)
                 else:
                     loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
-            else: 
+            else:
                 loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
-            
+
             summed_train_loss += loss
             num_processed_train += 1
             loss.backward()
@@ -207,7 +225,9 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
                     if epoch < warmup_epochs:
                         loss = mse_criterion(pred_mean_val, qp_val_batch)
                     else:
-                        loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                        loss = nll_criterion(
+                            qp_val_batch, pred_mean_val, pred_logvar_val
+                        )
                 else:
                     loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
                 summed_val_loss += loss
