@@ -31,20 +31,18 @@ class GaussianNLL(nn.Module):
 
 
 class NIGLoss(nn.Module):
-    def __init__(self, reg_coef: float = 1.0):
+    def __init__(self, reg_coef: float = 1.0, eps: float = 1e-6):
         super().__init__()
         self.reg_coef = reg_coef
+        self.eps = eps
 
     def forward(self, gamma, nu, alpha, beta, y):
         omega = 2 * beta * (1 + nu)
         L_nll = (
-            1 / 2 * torch.log(torch.pi / nu)
-            - alpha * torch.log(omega)
-            + (alpha + 1 / 2) * torch.log((y - gamma) ** 2 * nu + omega)
-            + torch.log(
-                torch.lgamma(alpha)
-                / torch.lgamma(alpha + 1 / 2)
-            )
+            0.5 * (torch.log(torch.tensor(torch.pi)) - torch.log(nu + self.eps))
+            - alpha * torch.log(omega + self.eps)
+            + (alpha + 0.5) * torch.log((y - gamma) ** 2 * nu + omega + self.eps)
+            + torch.lgamma(alpha) - torch.lgamma(alpha + 0.5)
         )
         L_r = torch.abs(y - gamma) * (2 * nu + alpha)
         loss = torch.mean(L_nll + self.reg_coef * L_r)

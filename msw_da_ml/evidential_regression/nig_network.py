@@ -55,6 +55,6 @@ class NIGCNNModel(nn.Module):
         nu = F.softplus(nu)
         beta = F.softplus(beta)
         alpha = F.softplus(alpha) + 1
+        gamma = F.softplus(gamma)
 
-        gamma[:, 2] = F.softplus(gamma[:, 2])
         return gamma, nu, alpha, beta
