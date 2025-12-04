@@ -21,7 +21,7 @@ class MCDOCNNModel(nn.Module):
                 padding_mode="circular",
             ),
             nn.SELU(),
-            nn.Dropout(p=dropout)
+            nn.Dropout(p=dropout),
         ]
 
         for i in range(network_config.num_layers - 2):
@@ -34,7 +34,7 @@ class MCDOCNNModel(nn.Module):
                     padding_mode="circular",
                 ),
                 nn.SELU(),
-                nn.Dropout(p=dropout)
+                nn.Dropout(p=dropout),
             ]
 
         layers += [
@@ -53,6 +53,6 @@ class MCDOCNNModel(nn.Module):
         x = self.network(x)
         mean, var = x[:, :3], x[:, 3:]
 
-        mean[:, 1] = F.relu(mean[:, 1])
+        mean[:, 1:2] = F.softplus(mean[:, 1:2])
         var = F.softplus(var)
         return mean, var
