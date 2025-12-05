@@ -162,8 +162,7 @@ def train_nig_nn(
     Trains the NIG CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
-    dropout = training_config.mcdo_dropout
-    model = NIGCNNModel(dropout=dropout)
+    model = NIGCNNModel()
     train(generated_training_data_name, model, model_name, include_timestamp_in_name, warmup=False)
 
 

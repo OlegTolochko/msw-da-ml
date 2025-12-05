@@ -8,7 +8,7 @@ network_config = settings.network_config
 
 
 class NIGCNNModel(nn.Module):
-    def __init__(self, dropout=0.1):
+    def __init__(self):
         super().__init__()
 
         layers = []
@@ -20,8 +20,7 @@ class NIGCNNModel(nn.Module):
                 padding=network_config.kernel_size // 2,
                 padding_mode="circular",
             ),
-            nn.SELU(),
-            nn.Dropout(p=dropout),
+            nn.SELU()
         ]
 
         for i in range(network_config.num_layers - 2):
@@ -33,8 +32,7 @@ class NIGCNNModel(nn.Module):
                     padding=network_config.kernel_size // 2,
                     padding_mode="circular",
                 ),
-                nn.SELU(),
-                nn.Dropout(p=dropout),
+                nn.SELU()
             ]
 
         layers += [
@@ -55,6 +53,5 @@ class NIGCNNModel(nn.Module):
         nu = F.softplus(nu)
         beta = F.softplus(beta)
         alpha = F.softplus(alpha) + 1
-        gamma = F.softplus(gamma)
 
         return gamma, nu, alpha, beta
