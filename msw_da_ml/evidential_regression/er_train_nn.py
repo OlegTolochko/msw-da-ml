@@ -149,7 +149,13 @@ def train_mcdo_nn(
     """
     dropout = training_config.mcdo_dropout
     model = MCDOCNNModel(dropout=dropout)
-    train(generated_training_data_name, model, model_name, include_timestamp_in_name, warmup=True)
+    train(
+        generated_training_data_name,
+        model,
+        model_name,
+        include_timestamp_in_name,
+        warmup=True,
+    )
 
 
 @app.command()
@@ -163,7 +169,13 @@ def train_nig_nn(
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
     model = NIGCNNModel()
-    train(generated_training_data_name, model, model_name, include_timestamp_in_name, warmup=False)
+    train(
+        generated_training_data_name,
+        model,
+        model_name,
+        include_timestamp_in_name,
+        warmup=False,
+    )
 
 
 def train(
@@ -215,7 +227,9 @@ def train(
 
             if isinstance(model, NIGCNNModel):
                 pred_gamma, pred_nu, pred_alpha, pred_beta = model(kf_train_batch)
-                loss = nig_criterion(pred_gamma, pred_nu, pred_alpha, pred_beta, qp_train_batch)
+                loss = nig_criterion(
+                    pred_gamma, pred_nu, pred_alpha, pred_beta, qp_train_batch
+                )
             else:
                 pred_mean, pred_logvar = model(kf_train_batch)
                 if warmup:
@@ -241,8 +255,16 @@ def train(
         with torch.no_grad():
             for kf_val_batch, qp_val_batch in val_loader:
                 if isinstance(model, NIGCNNModel):
-                    pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val = model(kf_val_batch)
-                    loss = nig_criterion(pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val, qp_val_batch)
+                    pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val = model(
+                        kf_val_batch
+                    )
+                    loss = nig_criterion(
+                        pred_gamma_val,
+                        pred_nu_val,
+                        pred_alpha_val,
+                        pred_beta_val,
+                        qp_val_batch,
+                    )
                 else:
                     pred_mean_val, pred_logvar_val = model(kf_val_batch)
                     if warmup:
@@ -253,7 +275,9 @@ def train(
                                 qp_val_batch, pred_mean_val, pred_logvar_val
                             )
                     else:
-                        loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                        loss = nll_criterion(
+                            qp_val_batch, pred_mean_val, pred_logvar_val
+                        )
                 summed_val_loss += loss
                 num_processed_val += 1
 

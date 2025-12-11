@@ -20,7 +20,7 @@ class NIGCNNModel(nn.Module):
                 padding=network_config.kernel_size // 2,
                 padding_mode="circular",
             ),
-            nn.SELU()
+            nn.SELU(),
         ]
 
         for i in range(network_config.num_layers - 2):
@@ -32,7 +32,7 @@ class NIGCNNModel(nn.Module):
                     padding=network_config.kernel_size // 2,
                     padding_mode="circular",
                 ),
-                nn.SELU()
+                nn.SELU(),
             ]
 
         layers += [

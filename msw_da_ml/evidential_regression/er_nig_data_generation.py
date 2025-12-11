@@ -159,9 +159,9 @@ class ExperimentPipelineNIG:
         with torch.no_grad():
             gamma, nu, alpha, beta = self.model(normalized_tensor)
 
-        gamma_denorm = (
-            gamma * self.norm_stats["std_out"]
-        ) + self.norm_stats["mean_out"]
+        gamma_denorm = (gamma * self.norm_stats["std_out"]) + self.norm_stats[
+            "mean_out"
+        ]
 
         gamma_np = gamma_denorm.permute(1, 2, 0).cpu().numpy()
         nu_np = nu.permute(1, 2, 0).cpu().numpy()
