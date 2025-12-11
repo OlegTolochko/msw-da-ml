@@ -8,10 +8,14 @@ from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
+from msw_da_ml.msw.msw_data_generation import (
+    DataGenerationPipeline,
+    DataGenerationState,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
-from msw_da_ml.evidential_regression.losses import GaussianNLL
+from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
+from msw_da_ml.evidential_regression.losses import GaussianNLL, NIGLoss
 
 
 app = App()
@@ -19,7 +23,9 @@ app = App()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+trained_nn_model_path = get_output_dir(
+    settings.global_config.trained_nn_model_out_filename
+)
 normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
@@ -132,17 +138,53 @@ def get_train_val_loaders(
 
 
 @app.command()
-def train_mcdo_nn(generated_training_data_name: str, model_name: str = "mcdo_cnn_model", include_timestamp_in_name: bool = True):
+def train_mcdo_nn(
+    generated_training_data_name: str,
+    model_name: str = "mcdo_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
     """
     Trains the MCDO CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
     dropout = training_config.mcdo_dropout
     model = MCDOCNNModel(dropout=dropout)
-    train(generated_training_data_name, model, model_name, include_timestamp_in_name)
+    train(
+        generated_training_data_name,
+        model,
+        model_name,
+        include_timestamp_in_name,
+        warmup=True,
+    )
 
 
-def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool, warmup: bool):
+@app.command()
+def train_nig_nn(
+    generated_training_data_name: str,
+    model_name: str = "nig_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
+    """
+    Trains the NIG CNN Model based on training data given from a pipeline state.
+    Saves the trained model weights under the trained_nn_model_path set in the config.
+    """
+    model = NIGCNNModel()
+    train(
+        generated_training_data_name,
+        model,
+        model_name,
+        include_timestamp_in_name,
+        warmup=False,
+    )
+
+
+def train(
+    generated_training_data_name: str,
+    model: torch.nn.Module,
+    model_name: str,
+    include_timestamp_in_name: bool,
+    warmup: bool,
+):
     """
     Base Training method
     """
@@ -155,13 +197,17 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
- 
+
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        generated_training_data_name, device, model_name, normalization_path=normalization_path
+        generated_training_data_name,
+        device,
+        model_name,
+        normalization_path=normalization_path,
     )
 
     nll_criterion = GaussianNLL()
+    nig_criterion = NIGLoss()
     if warmup:
         mse_criterion = torch.nn.MSELoss()
         warmup_epochs = 20
@@ -179,15 +225,21 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
         for kf_train_batch, qp_train_batch in train_lodar:
             model.zero_grad()
 
-            pred_mean, pred_logvar = model(kf_train_batch)
-            if warmup:
-                if epoch < warmup_epochs:
-                    loss = mse_criterion(pred_mean, qp_train_batch)
+            if isinstance(model, NIGCNNModel):
+                pred_gamma, pred_nu, pred_alpha, pred_beta = model(kf_train_batch)
+                loss = nig_criterion(
+                    pred_gamma, pred_nu, pred_alpha, pred_beta, qp_train_batch
+                )
+            else:
+                pred_mean, pred_logvar = model(kf_train_batch)
+                if warmup:
+                    if epoch < warmup_epochs:
+                        loss = mse_criterion(pred_mean, qp_train_batch)
+                    else:
+                        loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
                 else:
                     loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
-            else: 
-                loss = nll_criterion(qp_train_batch, pred_mean, pred_logvar)
-            
+
             summed_train_loss += loss
             num_processed_train += 1
             loss.backward()
@@ -202,14 +254,30 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
         model.eval()
         with torch.no_grad():
             for kf_val_batch, qp_val_batch in val_loader:
-                pred_mean_val, pred_logvar_val = model(kf_val_batch)
-                if warmup:
-                    if epoch < warmup_epochs:
-                        loss = mse_criterion(pred_mean_val, qp_val_batch)
-                    else:
-                        loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                if isinstance(model, NIGCNNModel):
+                    pred_gamma_val, pred_nu_val, pred_alpha_val, pred_beta_val = model(
+                        kf_val_batch
+                    )
+                    loss = nig_criterion(
+                        pred_gamma_val,
+                        pred_nu_val,
+                        pred_alpha_val,
+                        pred_beta_val,
+                        qp_val_batch,
+                    )
                 else:
-                    loss = nll_criterion(qp_val_batch, pred_mean_val, pred_logvar_val)
+                    pred_mean_val, pred_logvar_val = model(kf_val_batch)
+                    if warmup:
+                        if epoch < warmup_epochs:
+                            loss = mse_criterion(pred_mean_val, qp_val_batch)
+                        else:
+                            loss = nll_criterion(
+                                qp_val_batch, pred_mean_val, pred_logvar_val
+                            )
+                    else:
+                        loss = nll_criterion(
+                            qp_val_batch, pred_mean_val, pred_logvar_val
+                        )
                 summed_val_loss += loss
                 num_processed_val += 1
 

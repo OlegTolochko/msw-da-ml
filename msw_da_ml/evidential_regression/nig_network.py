@@ -7,8 +7,8 @@ settings = load_settings()
 network_config = settings.network_config
 
 
-class MCDOCNNModel(nn.Module):
-    def __init__(self, dropout=0.1):
+class NIGCNNModel(nn.Module):
+    def __init__(self):
         super().__init__()
 
         layers = []
@@ -21,7 +21,6 @@ class MCDOCNNModel(nn.Module):
                 padding_mode="circular",
             ),
             nn.SELU(),
-            nn.Dropout(p=dropout),
         ]
 
         for i in range(network_config.num_layers - 2):
@@ -34,13 +33,12 @@ class MCDOCNNModel(nn.Module):
                     padding_mode="circular",
                 ),
                 nn.SELU(),
-                nn.Dropout(p=dropout),
             ]
 
         layers += [
             nn.Conv1d(
                 in_channels=network_config.hidden_channels,
-                out_channels=6,
+                out_channels=12,
                 kernel_size=network_config.kernel_size,
                 padding=network_config.kernel_size // 2,
                 padding_mode="circular",
@@ -51,8 +49,9 @@ class MCDOCNNModel(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        mean, var = x[:, :3], x[:, 3:]
+        gamma, nu, alpha, beta = x[:, :3], x[:, 3:6], x[:, 6:9], x[:, 9:]
+        nu = F.softplus(nu)
+        beta = F.softplus(beta)
+        alpha = F.softplus(alpha) + 1
 
-        mean[:, 1:2] = F.softplus(mean[:, 1:2])
-        var = F.softplus(var)
-        return mean, var
+        return gamma, nu, alpha, beta

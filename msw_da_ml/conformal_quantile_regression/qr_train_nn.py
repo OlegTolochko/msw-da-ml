@@ -16,8 +16,12 @@ app = App()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_quantile_nn_model_path = get_output_dir(settings.global_config.trained_quantile_nn_model_out_filename)
-quantile_normalization_path = get_output_dir(settings.global_config.quantile_normalization_out_filename)
+trained_quantile_nn_model_path = get_output_dir(
+    settings.global_config.trained_quantile_nn_model_out_filename
+)
+quantile_normalization_path = get_output_dir(
+    settings.global_config.quantile_normalization_out_filename
+)
 
 
 @app.command()

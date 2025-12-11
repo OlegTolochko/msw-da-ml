@@ -3,7 +3,7 @@ import copy
 
 import torch
 import numpy as np
-from cyclopts import App 
+from cyclopts import App
 
 from msw_da_ml.msw_cnn.network import CNNModel
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -19,7 +19,9 @@ app = App()
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+trained_nn_model_path = get_output_dir(
+    settings.global_config.trained_nn_model_out_filename
+)
 normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
@@ -37,9 +39,14 @@ def get_most_recent_model_name(name_begins_with: str):
     return os.path.basename(most_recent_model.path) if most_recent_model else None
 
 
-def load_trained_model(model: torch.nn.Module = CNNModel ,load_model_name: str = "", name_begins_with: str = "", device: str = "cuda"):
+def load_trained_model(
+    model: torch.nn.Module = CNNModel,
+    load_model_name: str = "",
+    name_begins_with: str = "",
+    device: str = "cuda",
+):
     """
-    loads a trained cnn model. 
+    loads a trained cnn model.
     If no name is provided the latest trained model is loaded.
 
     Return
@@ -61,7 +68,7 @@ def load_trained_model(model: torch.nn.Module = CNNModel ,load_model_name: str =
     model.to(device)
     model.eval()
 
-    load_normalization_name = f"norm_{load_model_name.removesuffix(".pth")}"
+    load_normalization_name = f"norm_{load_model_name.removesuffix('.pth')}"
     norm_stats_path = os.path.join(normalization_path, f"{load_normalization_name}.pt")
     norm_stats = torch.load(norm_stats_path, map_location=device)
 
@@ -73,8 +80,8 @@ def inference(
     num_inference_steps: int, load_model_name: str = "", compute_qpens: bool = True
 ):
     """
-    Runs inference for a chosen cnn model for num_inference_steps inference steps and 
-    generates a video visualization of the Truth vs CNN and optionally computes additional 
+    Runs inference for a chosen cnn model for num_inference_steps inference steps and
+    generates a video visualization of the Truth vs CNN and optionally computes additional
     QPEns predictions and visualizes QPEns vs CNN.
 
     If no load_model_name is provided, the latest trained model is loaded automatically.
@@ -154,7 +161,9 @@ def inference(
 
         ensemble_model.assimilate(corrected_state)
 
-    visualize_update_performance(ensemble_model, truth_model, load_model_name, "CNN", "Truth")
+    visualize_update_performance(
+        ensemble_model, truth_model, load_model_name, "CNN", "Truth"
+    )
     if compute_qpens:
         visualize_update_performance(
             ensemble_model, qpens_model, load_model_name, "CNN", "QPEns"
@@ -175,7 +184,7 @@ def visualize_update_performance(
     truth_model: EnsembleModel,
     trained_model_name: str,
     model_name1: str,
-    model_name2: str
+    model_name2: str,
 ):
     """
     Visualization of two EnsembleModels.

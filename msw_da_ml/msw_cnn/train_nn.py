@@ -8,7 +8,10 @@ from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline, DataGenerationState
+from msw_da_ml.msw.msw_data_generation import (
+    DataGenerationPipeline,
+    DataGenerationState,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw_cnn.network import CNNModel
 from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
@@ -19,7 +22,9 @@ app = App()
 settings = load_settings()
 training_config = settings.training_config
 
-trained_nn_model_path = get_output_dir(settings.global_config.trained_nn_model_out_filename)
+trained_nn_model_path = get_output_dir(
+    settings.global_config.trained_nn_model_out_filename
+)
 normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
 
 
@@ -132,7 +137,11 @@ def get_train_val_loaders(
 
 
 @app.command()
-def train_nn(generated_training_data_name: str, model_name: str = "cnn_model", include_timestamp_in_name: bool = True):
+def train_nn(
+    generated_training_data_name: str,
+    model_name: str = "cnn_model",
+    include_timestamp_in_name: bool = True,
+):
     """
     Trains the CNN Model based on training data given from a pipeline state.
     Saves the trained model weights under the trained_nn_model_path set in the config.
@@ -141,7 +150,12 @@ def train_nn(generated_training_data_name: str, model_name: str = "cnn_model", i
     train(generated_training_data_name, model, model_name, include_timestamp_in_name)
 
 
-def train(generated_training_data_name: str, model: torch.nn.Module, model_name: str, include_timestamp_in_name: bool):
+def train(
+    generated_training_data_name: str,
+    model: torch.nn.Module,
+    model_name: str,
+    include_timestamp_in_name: bool,
+):
     """
     Base Training method
     """
@@ -154,10 +168,13 @@ def train(generated_training_data_name: str, model: torch.nn.Module, model_name:
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
- 
+
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        generated_training_data_name, device, model_name, normalization_path=normalization_path
+        generated_training_data_name,
+        device,
+        model_name,
+        normalization_path=normalization_path,
     )
 
     criterion = RMSEBiasLoss()

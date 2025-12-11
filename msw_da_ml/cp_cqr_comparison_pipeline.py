@@ -4,14 +4,19 @@ from sklearn.model_selection import train_test_split
 import os
 from scipy.stats import norm
 
-from msw_da_ml.conformal_prediction.cp_data_generation import load_histories as load_cp_histories
+from msw_da_ml.conformal_prediction.cp_data_generation import (
+    load_histories as load_cp_histories,
+)
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
     load_histories as load_qr_histories,
 )
 from msw_da_ml.conformal_prediction.mcdo_data_generation import (
     load_histories as load_mcdo_histories,
 )
-from msw_da_ml.conformal_prediction.conformal_prediction import calibrate, check_coverage
+from msw_da_ml.conformal_prediction.conformal_prediction import (
+    calibrate,
+    check_coverage,
+)
 from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     calibrate_quantile_intervals_symmetric,
     apply_symmetric_quantile_adjustments,
@@ -85,9 +90,11 @@ def generate_comparison_analysis(
     )
 
     # Run CP (standard)
-    cp_quantiles = calibrate(cp_qpens_calib, cp_cnn_calib, normalization_term=1, ens_mean=ens_mean)
+    cp_quantiles = calibrate(
+        cp_qpens_calib, cp_cnn_calib, normalization_term=1, ens_mean=ens_mean
+    )
     cp_cnn_mean = np.mean(cp_cnn_test, axis=-1)
-    if ens_mean: 
+    if ens_mean:
         cp_quantiles_exp = np.tile(
             np.expand_dims(cp_quantiles, (0, -1)),
             (cp_cnn_mean.shape[0], 1, 1, cp_cnn_mean.shape[-1]),
@@ -96,7 +103,7 @@ def generate_comparison_analysis(
         cp_lower = cp_cnn_mean - cp_quantiles_exp
     else:
         cp_quantiles_exp = np.tile(
-            np.expand_dims(cp_quantiles, (0,-2, -1)),
+            np.expand_dims(cp_quantiles, (0, -2, -1)),
             (cp_cnn_test.shape[0], 1, 1, cp_cnn_test.shape[-2], cp_cnn_test.shape[-1]),
         )
         cp_upper = cp_cnn_test + cp_quantiles_exp
@@ -139,7 +146,9 @@ def generate_comparison_analysis(
     cqr_lower_adj, cqr_upper_adj = apply_symmetric_quantile_adjustments(
         cqr_lower_test, cqr_upper_test, cqr_adjustments, ens_mean=ens_mean
     )
-    cqr_coverage = check_quantile_coverage(cqr_qpens_test, cqr_lower_adj, cqr_upper_adj, ens_mean=ens_mean)
+    cqr_coverage = check_quantile_coverage(
+        cqr_qpens_test, cqr_lower_adj, cqr_upper_adj, ens_mean=ens_mean
+    )
 
     # Run MCDO STD
     if mcdo_hist_name:
@@ -184,7 +193,9 @@ def generate_comparison_analysis(
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
 
-    plot_coverage_comparison(coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean)
+    plot_coverage_comparison(
+        coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
+    )
     plot_interval_width_comparison(
         intervals, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
     )
@@ -205,7 +216,9 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
             if coverage.ndim == 5:
                 # Shape: (seeds, time, 3, grid, ens), average over grid and ens
                 coverage_mean = np.mean(coverage[:, :, i, :, :], axis=(0, -2, -1))
-                coverage_std = np.std(np.mean(coverage[:, :, i, :, :], axis=(-2, -1)), axis=0)
+                coverage_std = np.std(
+                    np.mean(coverage[:, :, i, :, :], axis=(-2, -1)), axis=0
+                )
             else:
                 # Shape: (seeds, time, 3, grid), average over grid only
                 coverage_mean = np.mean(coverage[:, :, i, :], axis=(0, -1))
@@ -245,7 +258,9 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
     print(f"Coverage comparison saved to: {save_path}")
 
 
-def plot_interval_width_comparison(intervals, method_names, save_name, ens_mean: bool = True):
+def plot_interval_width_comparison(
+    intervals, method_names, save_name, ens_mean: bool = True
+):
     """
     Creates interval width comparison plot (3 variables x N methods).
     Handles both ens_mean=True (4D intervals) and ens_mean=False (5D intervals).
@@ -264,11 +279,15 @@ def plot_interval_width_comparison(intervals, method_names, save_name, ens_mean:
             if interval_widths.ndim == 5:
                 # Shape: (seeds, time, 3, grid, ens), average over grid and ens
                 widths_mean = np.mean(interval_widths[:, :, i, :, :], axis=(0, -2, -1))
-                widths_std = np.std(np.mean(interval_widths[:, :, i, :, :], axis=(-2, -1)), axis=0)
+                widths_std = np.std(
+                    np.mean(interval_widths[:, :, i, :, :], axis=(-2, -1)), axis=0
+                )
             else:
                 # Shape: (seeds, time, 3, grid), average over grid only
                 widths_mean = np.mean(interval_widths[:, :, i, :], axis=(0, -1))
-                widths_std = np.std(np.mean(interval_widths[:, :, i, :], axis=-1), axis=0)
+                widths_std = np.std(
+                    np.mean(interval_widths[:, :, i, :], axis=-1), axis=0
+                )
 
             timesteps = range(len(widths_mean))
             ax.plot(timesteps, widths_mean, "b-", linewidth=2, label="Interval Width")

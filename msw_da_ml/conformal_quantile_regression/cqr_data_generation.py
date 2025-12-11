@@ -21,7 +21,9 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-experiments_path = get_output_dir(global_config.quantile_experiment_histories_out_filename)
+experiments_path = get_output_dir(
+    global_config.quantile_experiment_histories_out_filename
+)
 
 
 @dataclass
@@ -186,7 +188,7 @@ def save_histories(
     loaded_model_name: str,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"quantile_hist_{str.removesuffix(loaded_model_name, ".pth")}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    save_name = f"quantile_hist_{str.removesuffix(loaded_model_name, '.pth')}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = os.path.join(experiments_path, save_name)
     save_data = {}
 

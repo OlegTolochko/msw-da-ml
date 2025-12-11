@@ -6,6 +6,7 @@ from datetime import datetime
 
 import torch
 import numpy as np
+from cyclopts import App
 
 from msw_da_ml.msw_cnn.inference import load_trained_model
 from msw_da_ml.msw.msw_model import EnsembleModel
@@ -13,6 +14,10 @@ from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.random_manager import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
+
+
+app = App()
 
 settings = load_settings()
 experiment_config = settings.experiment_config
@@ -23,33 +28,33 @@ experiments_path = get_output_dir(global_config.experiment_histories_out_filenam
 
 
 @dataclass
-class ExperimentHistory:
+class ExperimentHistoryNIG:
     truth: List[np.ndarray]
     enkf_analysis: List[np.ndarray]
     qpens_analysis: List[np.ndarray]
-    cnn_analysis: List[np.ndarray]
-    enkf_background: List[np.ndarray]
-    qpens_background: List[np.ndarray]
-    cnn_background: List[np.ndarray]
+    cnn_analysis_gamma: List[np.ndarray]
+    cnn_analysis_nu: List[np.ndarray]
+    cnn_analysis_alpha: List[np.ndarray]
+    cnn_analysis_beta: List[np.ndarray]
     seed: int
 
 
-class ExperimentPipeline:
+class ExperimentPipelineNIG:
     def __init__(self, load_model_name: str = ""):
         self.device = (
             "mps"
             if torch.backends.mps.is_available()
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
+        name_begins_with = "nig"
         self.model, self.norm_stats = load_trained_model(
-            load_model_name=load_model_name,
-            name_begins_with="model",
-            device=self.device,
+            NIGCNNModel, load_model_name, name_begins_with, self.device
         )
+        self.model.eval()
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
-    ) -> ExperimentHistory:
+    ) -> ExperimentHistoryNIG:
         rngs = RandomGenerators.from_seed(seed)
 
         truth_model = EnsembleModel(
@@ -70,14 +75,14 @@ class ExperimentPipeline:
         qpens = QPEnsemble()
         obs_generator = ObservationGenerator(rngs)
 
-        histories = ExperimentHistory(
+        histories = ExperimentHistoryNIG(
             truth=[],
             enkf_analysis=[],
             qpens_analysis=[],
-            cnn_analysis=[],
-            enkf_background=[],
-            qpens_background=[],
-            cnn_background=[],
+            cnn_analysis_gamma=[],
+            cnn_analysis_nu=[],
+            cnn_analysis_alpha=[],
+            cnn_analysis_beta=[],
             seed=seed,
         )
 
@@ -92,7 +97,6 @@ class ExperimentPipeline:
 
             enkf_model.propagate()
             enkf_state = enkf_model.get_state()
-            histories.enkf_background.append(enkf_state)
 
             enkf_assimilated = enkf.assimilate(
                 enkf_state, obs_data.observation, obs_data.locations
@@ -102,7 +106,6 @@ class ExperimentPipeline:
 
             qpens_model.propagate()
             qpens_state = qpens_model.get_state()
-            histories.qpens_background.append(qpens_state)
 
             qpens_assimilated = qpens.assimilate(
                 qpens_state, obs_data.observation, obs_data.locations
@@ -112,24 +115,30 @@ class ExperimentPipeline:
 
             cnn_model.propagate()
             cnn_state = cnn_model.get_state()
-            histories.cnn_background.append(cnn_state)
 
             cnn_enkf_assimilated = enkf.assimilate(
                 cnn_state, obs_data.observation, obs_data.locations
             )
 
-            cnn_corrected = self._apply_cnn_correction(
-                cnn_enkf_assimilated, obs_data.locations
+            gamma, nu, alpha, beta = self._apply_cnn_correction_nig(
+                cnn_enkf_assimilated,
+                obs_data.locations,
             )
-            cnn_model.assimilate(cnn_corrected)
 
-            histories.cnn_analysis.append(cnn_corrected.copy())
+            cnn_model.assimilate(gamma)
+
+            histories.cnn_analysis_gamma.append(gamma.copy())
+            histories.cnn_analysis_nu.append(nu.copy())
+            histories.cnn_analysis_alpha.append(alpha.copy())
+            histories.cnn_analysis_beta.append(beta.copy())
 
         return histories
 
-    def _apply_cnn_correction(
-        self, assimilated_state: np.ndarray, observation_locations: np.ndarray
-    ) -> np.ndarray:
+    def _apply_cnn_correction_nig(
+        self,
+        assimilated_state: np.ndarray,
+        observation_locations: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         observation_locations_data = np.tile(
             np.expand_dims(observation_locations[2:3], axis=-1),
             (1, 1, assimilated_state.shape[2]),
@@ -148,18 +157,22 @@ class ExperimentPipeline:
         )
 
         with torch.no_grad():
-            corrected_norm = self.model(normalized_tensor)
+            gamma, nu, alpha, beta = self.model(normalized_tensor)
 
-        corrected_tensor = (
-            corrected_norm * self.norm_stats["std_out"]
-        ) + self.norm_stats["mean_out"]
-        corrected_state = corrected_tensor.permute(1, 2, 0).cpu().numpy()
+        gamma_denorm = (gamma * self.norm_stats["std_out"]) + self.norm_stats[
+            "mean_out"
+        ]
 
-        return corrected_state
+        gamma_np = gamma_denorm.permute(1, 2, 0).cpu().numpy()
+        nu_np = nu.permute(1, 2, 0).cpu().numpy()
+        alpha_np = alpha.permute(1, 2, 0).cpu().numpy()
+        beta_np = beta.permute(1, 2, 0).cpu().numpy()
+
+        return gamma_np, nu_np, alpha_np, beta_np
 
 
-def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistory], str]:
-    pipeline = ExperimentPipeline(load_model_name)
+def run_pipeline(load_model_name: str = "") -> List[ExperimentHistoryNIG]:
+    pipeline = ExperimentPipelineNIG(load_model_name)
     all_histories = []
 
     for i in range(experiment_config.num_seeds):
@@ -177,10 +190,10 @@ def run_pipeline(load_model_name: str = "") -> Tuple[List[ExperimentHistory], st
 
 
 def save_histories(
-    histories: List[ExperimentHistory],
+    histories: List[ExperimentHistoryNIG],
 ):
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
+    save_name = f"nig_hist_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
     save_path = os.path.join(experiments_path, save_name)
     save_data = {}
 
@@ -188,10 +201,10 @@ def save_histories(
         save_data[f"truth_{i}"] = np.array(hist.truth)
         save_data[f"enkf_analysis_{i}"] = np.array(hist.enkf_analysis)
         save_data[f"qpens_analysis_{i}"] = np.array(hist.qpens_analysis)
-        save_data[f"cnn_analysis_{i}"] = np.array(hist.cnn_analysis)
-        save_data[f"enkf_background_{i}"] = np.array(hist.enkf_background)
-        save_data[f"qpens_background_{i}"] = np.array(hist.qpens_background)
-        save_data[f"cnn_background_{i}"] = np.array(hist.cnn_background)
+        save_data[f"cnn_analysis_gamma_{i}"] = np.array(hist.cnn_analysis_gamma)
+        save_data[f"cnn_analysis_nu_{i}"] = np.array(hist.cnn_analysis_nu)
+        save_data[f"cnn_analysis_alpha_{i}"] = np.array(hist.cnn_analysis_alpha)
+        save_data[f"cnn_analysis_beta_{i}"] = np.array(hist.cnn_analysis_beta)
         save_data[f"seed_{i}"] = hist.seed
 
     save_data["num_experiments"] = len(histories)
@@ -200,7 +213,7 @@ def save_histories(
     print(f"Histories saved to {save_path}")
 
 
-def load_histories(load_name: str) -> List[ExperimentHistory]:
+def load_histories(load_name: str) -> List[ExperimentHistoryNIG]:
     if not load_name.endswith(".npz"):
         load_name += ".npz"
 
@@ -210,14 +223,14 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
 
     histories = []
     for i in range(num_experiments):
-        history = ExperimentHistory(
+        history = ExperimentHistoryNIG(
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
-            cnn_analysis=list(data[f"cnn_analysis_{i}"]),
-            enkf_background=list(data[f"enkf_background_{i}"]),
-            qpens_background=list(data[f"qpens_background_{i}"]),
-            cnn_background=list(data[f"cnn_background_{i}"]),
+            cnn_analysis_gamma=list(data[f"cnn_analysis_gamma_{i}"]),
+            cnn_analysis_nu=list(data[f"cnn_analysis_nu_{i}"]),
+            cnn_analysis_alpha=list(data[f"cnn_analysis_alpha_{i}"]),
+            cnn_analysis_beta=list(data[f"cnn_analysis_beta_{i}"]),
             seed=int(data[f"seed_{i}"]),
         )
         histories.append(history)
@@ -225,6 +238,7 @@ def load_histories(load_name: str) -> List[ExperimentHistory]:
     return histories
 
 
+@app.command()
 def generate_experiment_data(model_name: str = ""):
     histories = run_pipeline(model_name)
     save_histories(histories)
@@ -233,4 +247,4 @@ def generate_experiment_data(model_name: str = ""):
 
 
 if __name__ == "__main__":
-    generate_experiment_data()
+    app()

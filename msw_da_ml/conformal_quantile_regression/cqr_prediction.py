@@ -132,7 +132,7 @@ def cqr_prediction(hist_name: str):
 def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
     """
     Calculate empirical quantile from scores.
-        
+
     Returns:
         Quantile values of shape (time,)
     """
@@ -145,10 +145,12 @@ def calculate_empirical_quantile(scores: np.ndarray, alpha: float):
         # Shape: (seeds, time, grid, ens)
         num_seeds, num_time, num_grid, num_ens = scores.shape
         # Reshape to (seeds * grid * ens, time)
-        s = scores.transpose(0, 2, 3, 1).reshape(num_seeds * num_grid * num_ens, num_time)
+        s = scores.transpose(0, 2, 3, 1).reshape(
+            num_seeds * num_grid * num_ens, num_time
+        )
     else:
         raise ValueError(f"Unexpected scores shape: {scores.shape}")
-    
+
     m = s.shape[0]
     k = int(np.ceil((1.0 - alpha) * (m + 1))) - 1
     k = np.clip(k, 0, m - 1)
@@ -186,7 +188,10 @@ def calibrate_quantile_intervals_symmetric(
 
 
 def apply_symmetric_quantile_adjustments(
-    cnn_lower_test, cnn_upper_test, quantile_correction, ens_mean: bool = True,
+    cnn_lower_test,
+    cnn_upper_test,
+    quantile_correction,
+    ens_mean: bool = True,
 ):
     if ens_mean:
         cnn_lower_test = np.mean(cnn_lower_test, axis=(-1))
@@ -200,7 +205,9 @@ def apply_symmetric_quantile_adjustments(
     return cnn_lower_adjusted, cnn_upper_adjusted
 
 
-def check_quantile_coverage(test_set, lower_quantiles, upper_quantiles, ens_mean: bool = True):
+def check_quantile_coverage(
+    test_set, lower_quantiles, upper_quantiles, ens_mean: bool = True
+):
     """
     Checks coverage of quantile intervals.
     """
