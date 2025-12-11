@@ -12,7 +12,7 @@ from msw_da_ml.conformal_prediction.mcdo_data_generation import (
     load_histories as load_mcdo_histories,
 )
 from msw_da_ml.evidential_regression.er_nig_data_generation import (
-    load_histories as load_nig_histories
+    load_histories as load_nig_histories,
 )
 
 app = App()
@@ -322,22 +322,35 @@ def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
 
 
 @app.command()
-def nig_std(nig_hist_name: str, ens_mean: bool = False):
+def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10.0):
+    """
+    Compute prediction intervals using NIG model uncertainty estimates.
+    """
     histories = load_nig_histories(nig_hist_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
-    cnn_gamma = np.asarray(
-        [history.cnn_analysis_gamma for history in histories]
+    cnn_gamma = np.asarray([history.cnn_analysis_gamma for history in histories])
+    cnn_nu = np.asarray([history.cnn_analysis_nu for history in histories])
+    cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in histories])
+    cnn_beta = np.asarray([history.cnn_analysis_beta for history in histories])
+
+    print(f"\nNIG Parameter Statistics:")
+    print(
+        f"  gamma: mean={np.mean(cnn_gamma):.4f}, std={np.std(cnn_gamma):.4f}, "
+        f"min={np.min(cnn_gamma):.4f}, max={np.max(cnn_gamma):.4f}"
     )
-    cnn_nu = np.asarray(
-        [history.cnn_analysis_nu for history in histories]
+    print(
+        f"  nu: mean={np.mean(cnn_nu):.4f}, std={np.std(cnn_nu):.4f}, "
+        f"min={np.min(cnn_nu):.4f}, max={np.max(cnn_nu):.4f}"
     )
-    cnn_alpha = np.asarray(
-        [history.cnn_analysis_alpha for history in histories]
+    print(
+        f"  alpha: mean={np.mean(cnn_alpha):.4f}, std={np.std(cnn_alpha):.4f}, "
+        f"min={np.min(cnn_alpha):.4f}, max={np.max(cnn_alpha):.4f}"
     )
-    cnn_beta = np.asarray(
-        [history.cnn_analysis_beta for history in histories]
+    print(
+        f"  beta: mean={np.mean(cnn_beta):.4f}, std={np.std(cnn_beta):.4f}, "
+        f"min={np.min(cnn_beta):.4f}, max={np.max(cnn_beta):.4f}"
     )
 
     if ens_mean:
@@ -346,40 +359,64 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False):
         cnn_alpha = np.mean(cnn_alpha, axis=-1)
         cnn_beta = np.mean(cnn_beta, axis=-1)
 
-        aleatoric_var = cnn_beta/(cnn_alpha - 1)
-        epistemic_var = aleatoric_var/cnn_nu
+    alpha_safe = np.maximum(cnn_alpha, 1.0 + 1e-6)
+    nu_safe = np.maximum(cnn_nu, 1e-6)
 
-        total_std = np.sqrt(epistemic_var + aleatoric_var)
+    aleatoric_var = cnn_beta / (alpha_safe - 1.0)
+    epistemic_var = aleatoric_var / nu_safe
+    total_var = aleatoric_var + epistemic_var
 
-    else:
-        aleatoric_var = cnn_beta/(cnn_alpha - 1 + 1e-6)
-        epistemic_var = aleatoric_var/cnn_nu
-        total_std = np.sqrt(epistemic_var + aleatoric_var)
+    total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
+    total_std = np.sqrt(total_var_clipped)
+
+    print(f"\nVariance Statistics (before clipping):")
+    print(
+        f"  aleatoric_var: mean={np.mean(aleatoric_var):.4f}, max={np.max(aleatoric_var):.4f}"
+    )
+    print(
+        f"  epistemic_var: mean={np.mean(epistemic_var):.4f}, max={np.max(epistemic_var):.4f}"
+    )
+    print(
+        f"  total_std: mean={np.mean(np.sqrt(total_var)):.4f}, max={np.max(np.sqrt(total_var)):.4f}"
+    )
+
+    num_clipped = np.sum(total_var > max_std_clip**2)
+    total_elements = total_var.size
+    if num_clipped > 0:
+        print(
+            f"\nWarning: {num_clipped}/{total_elements} ({100 * num_clipped / total_elements:.2f}%) "
+            f"variance values were clipped to max_std={max_std_clip}"
+        )
 
     alpha = 1 - config.calibration_quantile
     z_score = norm.ppf(1 - alpha / 2)
 
-    print(f"Target Coverage: {config.calibration_quantile:.0%}")
+    print(f"\nTarget Coverage: {config.calibration_quantile:.0%}")
     print(f"Z-score used: {z_score:.4f}")
 
     upper_intervals = cnn_gamma + z_score * total_std
     lower_intervals = cnn_gamma - z_score * total_std
+
+    interval_lengths = upper_intervals - lower_intervals
+    print(f"\nInterval Length Statistics:")
+    print(f"  mean={np.mean(interval_lengths):.4f}, std={np.std(interval_lengths):.4f}")
+    print(f"  min={np.min(interval_lengths):.4f}, max={np.max(interval_lengths):.4f}")
 
     coverage = check_coverage(
         qpens_hist, upper_intervals, lower_intervals, ens_mean=ens_mean
     )
 
     mean_coverage = np.mean(coverage)
-    print(f"Mean Coverage: {mean_coverage:.4f}")
+    print(f"\nMean Coverage: {mean_coverage:.4f}")
 
-    visualize_coverage(coverage, nig_hist_name + "_mcdo_std")
+    visualize_coverage(coverage, nig_hist_name + "_nig_std")
     visualize_coverage_gridpoints(
         upper_intervals,
         lower_intervals,
         truth_hist,
         qpens_hist,
         cnn_gamma,
-        nig_hist_name + "_mcdo_std",
+        nig_hist_name + "_nig_std",
         cnn_std=total_std,
     )
 
