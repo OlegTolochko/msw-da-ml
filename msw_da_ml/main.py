@@ -168,7 +168,7 @@ def run_cqr_prediction(cqr_hist_name: str):
 def compare_cp_vs_cqr(
     cp_hist_name: str,
     cqr_hist_name: str,
-    mcdo_hist_name: str = None,
+    mcdo_hist_name: str | None = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
 ):
