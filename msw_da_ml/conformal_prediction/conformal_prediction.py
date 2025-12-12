@@ -335,13 +335,13 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
     cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in histories])
     cnn_beta = np.asarray([history.cnn_analysis_beta for history in histories])
 
-    print(f"\nNIG Parameter Statistics:")
+    print(f"NIG Parameter Statistics:")
     print(
-        f"  gamma: mean={np.mean(cnn_gamma):.4f}, std={np.std(cnn_gamma):.4f}, "
+        f"gamma: mean={np.mean(cnn_gamma):.4f}, std={np.std(cnn_gamma):.4f}, "
         f"min={np.min(cnn_gamma):.4f}, max={np.max(cnn_gamma):.4f}"
     )
     print(
-        f"  nu: mean={np.mean(cnn_nu):.4f}, std={np.std(cnn_nu):.4f}, "
+        f"nu: mean={np.mean(cnn_nu):.4f}, std={np.std(cnn_nu):.4f}, "
         f"min={np.min(cnn_nu):.4f}, max={np.max(cnn_nu):.4f}"
     )
     print(
@@ -349,7 +349,7 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
         f"min={np.min(cnn_alpha):.4f}, max={np.max(cnn_alpha):.4f}"
     )
     print(
-        f"  beta: mean={np.mean(cnn_beta):.4f}, std={np.std(cnn_beta):.4f}, "
+        f"beta: mean={np.mean(cnn_beta):.4f}, std={np.std(cnn_beta):.4f}, "
         f"min={np.min(cnn_beta):.4f}, max={np.max(cnn_beta):.4f}"
     )
 
@@ -371,20 +371,20 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
 
     print(f"\nVariance Statistics (before clipping):")
     print(
-        f"  aleatoric_var: mean={np.mean(aleatoric_var):.4f}, max={np.max(aleatoric_var):.4f}"
+        f"aleatoric_var: mean={np.mean(aleatoric_var):.4f}, max={np.max(aleatoric_var):.4f}"
     )
     print(
-        f"  epistemic_var: mean={np.mean(epistemic_var):.4f}, max={np.max(epistemic_var):.4f}"
+        f"epistemic_var: mean={np.mean(epistemic_var):.4f}, max={np.max(epistemic_var):.4f}"
     )
     print(
-        f"  total_std: mean={np.mean(np.sqrt(total_var)):.4f}, max={np.max(np.sqrt(total_var)):.4f}"
+        f"total_std: mean={np.mean(np.sqrt(total_var)):.4f}, max={np.max(np.sqrt(total_var)):.4f}"
     )
 
     num_clipped = np.sum(total_var > max_std_clip**2)
     total_elements = total_var.size
     if num_clipped > 0:
         print(
-            f"\nWarning: {num_clipped}/{total_elements} ({100 * num_clipped / total_elements:.2f}%) "
+            f"\n{num_clipped}/{total_elements} ({100 * num_clipped / total_elements:.2f}%) "
             f"variance values were clipped to max_std={max_std_clip}"
         )
 
@@ -399,8 +399,8 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
 
     interval_lengths = upper_intervals - lower_intervals
     print(f"\nInterval Length Statistics:")
-    print(f"  mean={np.mean(interval_lengths):.4f}, std={np.std(interval_lengths):.4f}")
-    print(f"  min={np.min(interval_lengths):.4f}, max={np.max(interval_lengths):.4f}")
+    print(f"mean={np.mean(interval_lengths):.4f}, std={np.std(interval_lengths):.4f}")
+    print(f"min={np.min(interval_lengths):.4f}, max={np.max(interval_lengths):.4f}")
 
     coverage = check_coverage(
         qpens_hist, upper_intervals, lower_intervals, ens_mean=ens_mean

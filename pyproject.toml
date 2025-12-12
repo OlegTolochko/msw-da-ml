@@ -22,3 +22,11 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["msw_da_ml*"]
+
+[tool.uv.sources]
+msw-da-ml = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "msw-da-ml",
+]

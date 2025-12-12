@@ -319,6 +319,7 @@ def plot_interval_width_comparison(
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval width comparison saved to: {save_path}")
 
+
 def plot_coverage_and_width_joint(
     coverages,
     intervals,
@@ -331,7 +332,11 @@ def plot_coverage_and_width_joint(
     for each variable and method. Layout: 3 rows (u,h,r) x N methods.
     """
     fig, axes = plt.subplots(
-        3, len(method_names), figsize=(5 * len(method_names), 12), sharex=True
+        3,
+        len(method_names),
+        figsize=(8 * len(method_names), 12),
+        sharex=True,
+        sharey=True,
     )
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
@@ -355,7 +360,7 @@ def plot_coverage_and_width_joint(
                 cov_std = np.std(np.mean(coverage[:, :, i, :], axis=-1), axis=0)
 
             # width stats
-            widths = (upper - lower)
+            widths = upper - lower
             if widths.ndim == 5:
                 # (seeds, time, 3, grid, ens)
                 w_mean = np.mean(widths[:, :, i, :, :], axis=(0, -2, -1))
@@ -389,9 +394,7 @@ def plot_coverage_and_width_joint(
             ax_cov.set_ylim(0, 1)
 
             # width
-            ax_w.plot(
-                timesteps, w_mean, color="tab:orange", linewidth=2, label="Width"
-            )
+            ax_w.plot(timesteps, w_mean, color="tab:orange", linewidth=2, label="Width")
             ax_w.fill_between(
                 timesteps,
                 w_mean - w_std,
@@ -431,4 +434,3 @@ def plot_coverage_and_width_joint(
     save_path = f"{viz_dir}{save_name}_coverage_width_joint.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage+Width joint plot saved to: {save_path}")
-
