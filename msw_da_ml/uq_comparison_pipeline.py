@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
+from datetime import datetime
 from scipy.stats import norm
 
 from msw_da_ml.conformal_prediction.cp_data_generation import (
@@ -185,10 +186,49 @@ def generate_comparison_analysis(
             mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=False
         )
 
+    # Run NIG STD
+    if nig_hist_name:
+        if ens_mean:
+            nig_cnn_gamma_mean = np.mean(nig_cnn_gamma, axis=-1)
+            nig_cnn_nu_mean = np.mean(nig_cnn_nu, axis=-1)
+            nig_cnn_alpha_mean = np.mean(nig_cnn_alpha, axis=-1)
+            nig_cnn_beta_mean = np.mean(nig_cnn_beta, axis=-1)
+        else:
+            nig_cnn_gamma_mean = nig_cnn_gamma
+            nig_cnn_nu_mean = nig_cnn_nu
+            nig_cnn_alpha_mean = nig_cnn_alpha
+            nig_cnn_beta_mean = nig_cnn_beta
+
+        alpha_safe = np.maximum(nig_cnn_alpha_mean, 1.0 + 1e-6)
+        nu_safe = np.maximum(nig_cnn_nu_mean, 1e-6)
+
+        aleatoric_var = nig_cnn_beta_mean / (alpha_safe - 1.0)
+        epistemic_var = aleatoric_var / nu_safe
+        total_var = aleatoric_var + epistemic_var
+
+        max_std_clip = 10.0
+        total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
+        nig_total_std = np.sqrt(total_var_clipped)
+
+        alpha = 1 - config.calibration_quantile
+        z_score = norm.ppf(1 - alpha / 2)
+
+        nig_upper = nig_cnn_gamma_mean + z_score * nig_total_std
+        nig_lower = nig_cnn_gamma_mean - z_score * nig_total_std
+
+        nig_coverage = check_coverage(
+            nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
+        )
+
     # Comparison plots:
     methods = ["CP", "CQR"]
     coverages = [cp_coverage, cqr_coverage]
     intervals = [(cp_lower, cp_upper), (cqr_lower_adj, cqr_upper_adj)]
+
+    if nig_hist_name:
+        methods.append("NIG STD")
+        coverages.append(nig_coverage)
+        intervals.append((nig_lower, nig_upper))
 
     if normalize_cp:
         methods.append("CP (Normalized)")
@@ -205,18 +245,21 @@ def generate_comparison_analysis(
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
 
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    save_name = f"uq_method_comparison_{timestamp}"
+
     plot_coverage_comparison(
-        coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
+        coverages, methods, save_name, ens_mean=ens_mean
     )
     plot_interval_width_comparison(
-        intervals, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
+        intervals, methods, save_name, ens_mean=ens_mean
     )
 
     plot_coverage_and_width_joint(
         coverages,
         intervals,
         methods,
-        f"{cp_hist_name}_vs_{cqr_hist_name}",
+        save_name,
         ens_mean=ens_mean,
     )
 
@@ -273,7 +316,7 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
             ax.set_ylim(0, 1)
 
     plt.tight_layout()
-    save_path = f"{viz_dir}{save_name}_coverage_comparison.png"
+    save_path = f"{viz_dir}/{save_name}_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage comparison saved to: {save_path}")
 
@@ -327,7 +370,7 @@ def plot_interval_width_comparison(
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    save_path = f"{viz_dir}{save_name}_interval_width_comparison.png"
+    save_path = f"{viz_dir}/{save_name}_interval_width.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval width comparison saved to: {save_path}")
 
@@ -443,6 +486,6 @@ def plot_coverage_and_width_joint(
                 )
 
     plt.tight_layout()
-    save_path = f"{viz_dir}{save_name}_coverage_width_joint.png"
+    save_path = f"{viz_dir}/{save_name}_coverage_width_joint.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage+Width joint plot saved to: {save_path}")

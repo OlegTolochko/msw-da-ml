@@ -165,10 +165,11 @@ def run_cqr_prediction(cqr_hist_name: str):
 
 
 @app.command()
-def compare_cp_vs_cqr(
+def compare_uq_methods(
     cp_hist_name: str,
     cqr_hist_name: str,
     mcdo_hist_name: str | None = None,
+    nig_hist_name: str | None = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
 ):
@@ -185,7 +186,7 @@ def compare_cp_vs_cqr(
         Whether to also run normalized CP for comparison.
     """
     generate_comparison_analysis(
-        cp_hist_name, cqr_hist_name, mcdo_hist_name, normalize_cp, include_cnn_std
+        cp_hist_name, cqr_hist_name, mcdo_hist_name, nig_hist_name, normalize_cp, include_cnn_std
     )
 
 
