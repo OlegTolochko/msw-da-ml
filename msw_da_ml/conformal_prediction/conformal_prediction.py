@@ -26,7 +26,11 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 @app.command()
 def conformal_prediction(
-    cp_hist_name: str, normalize: bool = False, num_iterations: int = 10
+    cp_hist_name: str,
+    normalize: bool = False,
+    num_iterations: int = 10,
+    generative_visualizations: bool = True,
+    ens_mean: bool = False,
 ):
     """
     Runs conformal prediction pipeline.
@@ -36,10 +40,14 @@ def conformal_prediction(
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
+    viz_hist_name = cp_hist_name
     if normalize:
-        cp_hist_name += "_normalized"
+        viz_hist_name += "_normalized"
 
     coverages = []
+    all_lower_intervals = []
+    all_upper_intervals = []
+
     for i in range(num_iterations):
         truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
             train_test_split(
@@ -51,22 +59,25 @@ def conformal_prediction(
             )
         )
         quantiles, coverage, upper_intervals, lower_intervals = cp_main(
-            cnn_calib, qpens_calib, cnn_test, qpens_test, normalize
+            cnn_calib, qpens_calib, cnn_test, qpens_test, normalize, ens_mean
         )
 
         coverages.append(coverage)
-        if (
-            i == 0
-        ):  # only visualize quantile intervals and gridpoint coverage for first iteration
-            visualize_quantile_intervals(quantiles, cp_hist_name)
+        all_lower_intervals.append(lower_intervals)
+        all_upper_intervals.append(upper_intervals)
+
+        if generative_visualizations and i == 0:
+            # only visualize quantile intervals and gridpoint coverage for first iteration
+            visualize_quantile_intervals(quantiles, viz_hist_name)
             visualize_coverage_gridpoints(
                 upper_intervals,
                 lower_intervals,
                 truth_test,
                 qpens_test,
                 cnn_test,
-                cp_hist_name,
+                viz_hist_name,
             )
+
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     mean_coverage = np.mean(coverages)
     var_coverage = np.var([np.mean(coverage) for coverage in coverages])
@@ -74,7 +85,10 @@ def conformal_prediction(
     print(f"Coverage Variance: {var_coverage} for {num_iterations} data splits")
 
     coverage_iter_mean = np.mean(coverages, axis=0)
-    visualize_coverage(coverage_iter_mean, cp_hist_name)
+    if generative_visualizations:
+        visualize_coverage(coverage_iter_mean, viz_hist_name)
+
+    return coverages, all_lower_intervals, all_upper_intervals
 
 
 def cp_main(
@@ -85,9 +99,8 @@ def cp_main(
     normalize,
     external_norm_calib=None,
     external_norm_test=None,
+    ens_mean: bool = True,
 ):
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
     normalization_term = 1
     normalization_term_test = 1.0
     if normalize:
@@ -114,23 +127,39 @@ def cp_main(
         truth_calib=qpens_calib,
         cnn_calib=cnn_calib,
         normalization_term=normalization_term,
+        ens_mean=ens_mean,
     )
-    cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
 
-    quantiles_expanded = (
-        np.tile(
-            np.expand_dims(quantiles, (0, -1)),
-            (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
+    if ens_mean:
+        cnn_test_ens_mean = np.mean(cnn_test, axis=-1)
+        quantiles_expanded = (
+            np.tile(
+                np.expand_dims(quantiles, (0, -1)),
+                (cnn_test_ens_mean.shape[0], 1, 1, cnn_test_ens_mean.shape[-1]),
+            )
+            * normalization_term_test
         )
-        * normalization_term_test
+        upper_intervals = cnn_test_ens_mean + quantiles_expanded
+        lower_intervals = cnn_test_ens_mean - quantiles_expanded
+    else:
+        quantiles_expanded = (
+            np.tile(
+                np.expand_dims(quantiles, (0, -2, -1)),
+                (cnn_test.shape[0], 1, 1, cnn_test.shape[-2], cnn_test.shape[-1]),
+            )
+            * normalization_term_test
+        )
+        upper_intervals = cnn_test + quantiles_expanded
+        lower_intervals = cnn_test - quantiles_expanded
+
+    coverage = check_coverage(
+        qpens_test, upper_intervals, lower_intervals, ens_mean=ens_mean
     )
 
-    upper_intervals = cnn_test_ens_mean + quantiles_expanded
-    lower_intervals = cnn_test_ens_mean - quantiles_expanded
-
-    coverage = check_coverage(qpens_test, upper_intervals, lower_intervals)
-
-    quantiles = np.mean(quantiles_expanded, axis=(0, -1))
+    if ens_mean:
+        quantiles = np.mean(quantiles_expanded, axis=(0, -1))
+    else:
+        quantiles = np.mean(quantiles_expanded, axis=(0, -2, -1))
     return quantiles, coverage, upper_intervals, lower_intervals
 
 
