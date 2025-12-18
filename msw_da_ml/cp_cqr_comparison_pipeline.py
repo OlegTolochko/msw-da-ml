@@ -22,6 +22,9 @@ from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
+from msw_da_ml.evidential_regression.er_nig_data_generation import (
+    load_histories as load_nig_histories,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
@@ -33,7 +36,8 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 def generate_comparison_analysis(
     cp_hist_name: str,
     cqr_hist_name: str,
-    mcdo_hist_name: str = None,
+    mcdo_hist_name: str = "",
+    nig_hist_name: str = "",
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
     ens_mean: bool = False,
@@ -53,6 +57,14 @@ def generate_comparison_analysis(
     cqr_qpens = np.asarray([h.qpens_analysis for h in cqr_histories])
     cqr_lower = np.asarray([h.cnn_analysis_lower_quantiles for h in cqr_histories])
     cqr_upper = np.asarray([h.cnn_analysis_upper_quantiles for h in cqr_histories])
+
+    nig_histories = load_nig_histories(nig_hist_name)
+    nig_qpens_hist = np.asarray([history.qpens_analysis for history in nig_histories])
+    nig_truth_hist = np.asarray([history.truth for history in nig_histories])
+    nig_cnn_gamma = np.asarray([history.cnn_analysis_gamma for history in nig_histories])
+    nig_cnn_nu = np.asarray([history.cnn_analysis_nu for history in nig_histories])
+    nig_cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in nig_histories])
+    nig_cnn_beta = np.asarray([history.cnn_analysis_beta for history in nig_histories])
 
     # Split size
     random_state = config.calibration_split_seed
