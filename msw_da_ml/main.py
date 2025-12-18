@@ -15,7 +15,7 @@ from msw_da_ml.conformal_prediction.cp_data_generation import (
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
     generate_experiment_data_qr as generate_cqr_experiment_data,
 )
-from msw_da_ml.cp_cqr_comparison_pipeline import generate_comparison_analysis
+from msw_da_ml.uq_comparison_pipeline import generate_comparison_analysis
 from msw_da_ml.conformal_prediction.conformal_prediction import conformal_prediction
 from msw_da_ml.conformal_quantile_regression.cqr_prediction import cqr_prediction
 
