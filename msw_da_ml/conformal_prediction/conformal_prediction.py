@@ -4,6 +4,7 @@ from cyclopts import App
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc
+from sklearn.ensemble import RandomForestRegressor
 
 
 from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
@@ -555,6 +556,58 @@ def visualize_coverage(coverage: np.ndarray, hist_name: str):
     save_path = f"{viz_dir}/{base_name}_conformal_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage visualization saved to: {save_path}")
+
+
+@app.command()
+def rf_normalized_cp(
+    cp_hist_name: str,
+    ens_mean: bool = False,
+):
+    histories = load_histories(cp_hist_name)
+    truth_hist = np.asarray([history.truth for history in histories])
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    cnn_hist = np.asarray([history.cnn_analysis for history in histories])
+    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test = (
+            train_test_split(
+                truth_hist,
+                qpens_hist,
+                cnn_hist,
+                test_size=1 - config.calibration_split_ratio,
+                random_state=config.calibration_split_seed,
+            )
+        )
+    
+    cnn_calib_mean = np.mean(cnn_calib, axis=-1) 
+    qpens_calib_mean = np.mean(qpens_calib, axis=-1)
+    
+    # X_rf shape: (Total_Samples, 3)
+    X_rf = cnn_calib_mean.transpose(0, 1, 3, 2).reshape(-1, 3)
+    
+    Y_rf = np.abs(qpens_calib_mean - cnn_calib_mean).transpose(0, 1, 3, 2).reshape(-1, 3)
+
+    rf = RandomForestRegressor(n_estimators=100, n_jobs=-1)
+    rf.fit(X_rf, Y_rf)
+
+    norm_calib = rf.predict(X_rf).reshape(cnn_calib_mean.shape[0], cnn_calib_mean.shape[1], cnn_calib_mean.shape[3], 3).transpose(0, 1, 3, 2)
+    
+    cnn_test_mean = np.mean(cnn_test, axis=-1)
+    X_test_rf = cnn_test_mean.transpose(0, 1, 3, 2).reshape(-1, 3)
+    norm_test = rf.predict(X_test_rf).reshape(cnn_test_mean.shape[0], cnn_test_mean.shape[1], cnn_test_mean.shape[3], 3).transpose(0, 1, 3, 2)
+
+    quantiles, coverage, upper, lower = cp_main(
+        cnn_calib, qpens_calib, cnn_test, qpens_test, 
+        normalize=True, 
+        external_norm_calib=norm_calib, 
+        external_norm_test=norm_test,
+        ens_mean=True
+    )
+
+    print(f"Target coverage: {config.calibration_quantile:.0%}")
+    mean_coverage = np.mean(coverage)
+    print(f"Mean Coverage: {mean_coverage}")
+    visualize_coverage(coverage, cp_hist_name)
+
+    return quantiles, coverage
 
 
 def visualize_quantile_intervals(quantiles: np.ndarray, hist_name: str):
