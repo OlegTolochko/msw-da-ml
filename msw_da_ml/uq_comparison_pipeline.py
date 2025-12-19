@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
+from datetime import datetime
 from scipy.stats import norm
 
 from msw_da_ml.conformal_prediction.cp_data_generation import (
@@ -22,6 +23,9 @@ from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
+from msw_da_ml.evidential_regression.er_nig_data_generation import (
+    load_histories as load_nig_histories,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
@@ -33,7 +37,8 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 def generate_comparison_analysis(
     cp_hist_name: str,
     cqr_hist_name: str,
-    mcdo_hist_name: str = None,
+    mcdo_hist_name: str = "",
+    nig_hist_name: str = "",
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
     ens_mean: bool = False,
@@ -53,6 +58,14 @@ def generate_comparison_analysis(
     cqr_qpens = np.asarray([h.qpens_analysis for h in cqr_histories])
     cqr_lower = np.asarray([h.cnn_analysis_lower_quantiles for h in cqr_histories])
     cqr_upper = np.asarray([h.cnn_analysis_upper_quantiles for h in cqr_histories])
+
+    nig_histories = load_nig_histories(nig_hist_name)
+    nig_qpens_hist = np.asarray([history.qpens_analysis for history in nig_histories])
+    nig_truth_hist = np.asarray([history.truth for history in nig_histories])
+    nig_cnn_gamma = np.asarray([history.cnn_analysis_gamma for history in nig_histories])
+    nig_cnn_nu = np.asarray([history.cnn_analysis_nu for history in nig_histories])
+    nig_cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in nig_histories])
+    nig_cnn_beta = np.asarray([history.cnn_analysis_beta for history in nig_histories])
 
     # Split size
     random_state = config.calibration_split_seed
@@ -173,11 +186,44 @@ def generate_comparison_analysis(
             mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=False
         )
 
+    # Run NIG STD
+    if nig_hist_name:
+        if ens_mean:
+            nig_cnn_gamma_mean = np.mean(nig_cnn_gamma, axis=-1)
+            nig_cnn_nu_mean = np.mean(nig_cnn_nu, axis=-1)
+            nig_cnn_alpha_mean = np.mean(nig_cnn_alpha, axis=-1)
+            nig_cnn_beta_mean = np.mean(nig_cnn_beta, axis=-1)
+        else:
+            nig_cnn_gamma_mean = nig_cnn_gamma
+            nig_cnn_nu_mean = nig_cnn_nu
+            nig_cnn_alpha_mean = nig_cnn_alpha
+            nig_cnn_beta_mean = nig_cnn_beta
+
+        alpha_safe = np.maximum(nig_cnn_alpha_mean, 1.0 + 1e-6)
+        nu_safe = np.maximum(nig_cnn_nu_mean, 1e-6)
+
+        aleatoric_var = nig_cnn_beta_mean / (alpha_safe - 1.0)
+        epistemic_var = aleatoric_var / nu_safe
+        total_var = aleatoric_var + epistemic_var
+
+        max_std_clip = 10.0
+        total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
+        nig_total_std = np.sqrt(total_var_clipped)
+
+        alpha = 1 - config.calibration_quantile
+        z_score = norm.ppf(1 - alpha / 2)
+
+        nig_upper = nig_cnn_gamma_mean + z_score * nig_total_std
+        nig_lower = nig_cnn_gamma_mean - z_score * nig_total_std
+
+        nig_coverage = check_coverage(
+            nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
+        )
+
     # Comparison plots:
     methods = ["CP", "CQR"]
     coverages = [cp_coverage, cqr_coverage]
     intervals = [(cp_lower, cp_upper), (cqr_lower_adj, cqr_upper_adj)]
-
     if normalize_cp:
         methods.append("CP (Normalized)")
         coverages.append(cp_norm_coverage)
@@ -192,12 +238,28 @@ def generate_comparison_analysis(
         methods.append("MCDO STD")
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
+    
+    if nig_hist_name:
+        methods.append("NIG STD")
+        coverages.append(nig_coverage)
+        intervals.append((nig_lower, nig_upper))
+
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    save_name = f"uq_method_comparison_{timestamp}"
 
     plot_coverage_comparison(
-        coverages, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
+        coverages, methods, save_name, ens_mean=ens_mean
     )
     plot_interval_width_comparison(
-        intervals, methods, f"{cp_hist_name}_vs_{cqr_hist_name}", ens_mean=ens_mean
+        intervals, methods, save_name, ens_mean=ens_mean
+    )
+
+    plot_coverage_and_width_joint(
+        coverages,
+        intervals,
+        methods,
+        save_name,
+        ens_mean=ens_mean,
     )
 
 
@@ -253,7 +315,7 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
             ax.set_ylim(0, 1)
 
     plt.tight_layout()
-    save_path = f"{viz_dir}{save_name}_coverage_comparison.png"
+    save_path = f"{viz_dir}/{save_name}_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage comparison saved to: {save_path}")
 
@@ -307,6 +369,122 @@ def plot_interval_width_comparison(
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    save_path = f"{viz_dir}{save_name}_interval_width_comparison.png"
+    save_path = f"{viz_dir}/{save_name}_interval_width.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval width comparison saved to: {save_path}")
+
+
+def plot_coverage_and_width_joint(
+    coverages,
+    intervals,
+    method_names,
+    save_name,
+    ens_mean: bool = True,
+):
+    """
+    Joint plot: Coverage (left y-axis) + Interval width (right y-axis)
+    for each variable and method. Layout: 3 rows (u,h,r) x N methods.
+    """
+    fig, axes = plt.subplots(
+        3,
+        len(method_names),
+        figsize=(8 * len(method_names), 12),
+        sharex=True,
+        sharey=True,
+    )
+    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+
+    for i, var_name in enumerate(variable_names):
+        for j, (coverage, (lower, upper), method_name) in enumerate(
+            zip(coverages, intervals, method_names)
+        ):
+            ax_cov = axes[i, j] if len(method_names) > 1 else axes[i]
+            ax_w = ax_cov.twinx()
+
+            # coverage stats
+            if coverage.ndim == 5:
+                # (seeds, time, 3, grid, ens)
+                cov_mean = np.mean(coverage[:, :, i, :, :], axis=(0, -2, -1))
+                cov_std = np.std(
+                    np.mean(coverage[:, :, i, :, :], axis=(-2, -1)), axis=0
+                )
+            else:
+                # (seeds, time, 3, grid)
+                cov_mean = np.mean(coverage[:, :, i, :], axis=(0, -1))
+                cov_std = np.std(np.mean(coverage[:, :, i, :], axis=-1), axis=0)
+
+            # width stats
+            widths = upper - lower
+            if widths.ndim == 5:
+                # (seeds, time, 3, grid, ens)
+                w_mean = np.mean(widths[:, :, i, :, :], axis=(0, -2, -1))
+                w_std = np.std(np.mean(widths[:, :, i, :, :], axis=(-2, -1)), axis=0)
+            else:
+                # (seeds, time, 3, grid)
+                w_mean = np.mean(widths[:, :, i, :], axis=(0, -1))
+                w_std = np.std(np.mean(widths[:, :, i, :], axis=-1), axis=0)
+
+            timesteps = np.arange(len(cov_mean))
+
+            # coverage
+            ax_cov.plot(
+                timesteps, cov_mean, color="tab:blue", linewidth=2, label="Coverage"
+            )
+            ax_cov.fill_between(
+                timesteps,
+                cov_mean - cov_std,
+                cov_mean + cov_std,
+                color="tab:blue",
+                alpha=0.15,
+                label="Coverage ±1σ",
+            )
+            ax_cov.axhline(
+                y=config.calibration_quantile,
+                color="tab:blue",
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.8,
+            )
+            ax_cov.set_ylim(0, 1)
+
+            # width
+            ax_w.plot(timesteps, w_mean, color="tab:orange", linewidth=2, label="Width")
+            ax_w.fill_between(
+                timesteps,
+                w_mean - w_std,
+                w_mean + w_std,
+                color="tab:orange",
+                alpha=0.15,
+                label="Width ±1σ",
+            )
+
+            if i == 0:
+                ax_cov.set_title(method_name)
+
+            ax_cov.set_ylabel("Coverage")
+            ax_w.set_ylabel("Width")
+            ax_cov.grid(True, alpha=0.25)
+
+            h1, l1 = ax_cov.get_legend_handles_labels()
+            h2, l2 = ax_w.get_legend_handles_labels()
+            ax_cov.legend(h1 + h2, l1 + l2, loc="upper right", fontsize=8)
+
+            if i == 2:
+                ax_cov.set_xlabel("Timestep")
+
+            if j == 0:
+                ax_cov.text(
+                    -0.12,
+                    0.5,
+                    var_name,
+                    transform=ax_cov.transAxes,
+                    rotation=90,
+                    va="center",
+                    ha="right",
+                    fontsize=11,
+                )
+
+    plt.tight_layout()
+    save_path = f"{viz_dir}/{save_name}_coverage_width_joint.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"Coverage+Width joint plot saved to: {save_path}")
