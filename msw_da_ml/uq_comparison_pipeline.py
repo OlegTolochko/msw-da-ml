@@ -224,12 +224,6 @@ def generate_comparison_analysis(
     methods = ["CP", "CQR"]
     coverages = [cp_coverage, cqr_coverage]
     intervals = [(cp_lower, cp_upper), (cqr_lower_adj, cqr_upper_adj)]
-
-    if nig_hist_name:
-        methods.append("NIG STD")
-        coverages.append(nig_coverage)
-        intervals.append((nig_lower, nig_upper))
-
     if normalize_cp:
         methods.append("CP (Normalized)")
         coverages.append(cp_norm_coverage)
@@ -244,6 +238,11 @@ def generate_comparison_analysis(
         methods.append("MCDO STD")
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
+    
+    if nig_hist_name:
+        methods.append("NIG STD")
+        coverages.append(nig_coverage)
+        intervals.append((nig_lower, nig_upper))
 
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = f"uq_method_comparison_{timestamp}"
