@@ -563,7 +563,7 @@ def visualize_coverage(coverage: np.ndarray, hist_name: str):
 def get_rf_norm(data, rf):
     S, T, V, G, E = data.shape
     X = data.transpose(0, 1, 3, 4, 2).reshape(-1, V)
-    preds = rf.predict(X) # (S*T*G*E, V)
+    preds = rf.predict(X)  # (S*T*G*E, V)
     # Reshape back to (S, T, G, E, V) -> (S, T, V, G, E)
     return preds.reshape(S, T, G, E, V).transpose(0, 1, 4, 2, 3)
 
@@ -572,7 +572,7 @@ def get_rf_norm(data, rf):
 def rf_normalized_cp(
     cp_hist_name: str,
     rf_name: str = "",
-    ens_mean: bool = True,
+    ens_mean: bool = False,
 ):
     """
     Runs conformal prediction using a pre-trained Random Forest for normalization.
@@ -590,32 +590,42 @@ def rf_normalized_cp(
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
     cnn_background = np.asarray([history.cnn_background for history in histories])
-    
-    truth_calib, truth_test, qpens_calib, qpens_test, cnn_calib, cnn_test, cnn_bg_calib, cnn_bg_test = (
-        train_test_split(
-            truth_hist,
-            qpens_hist,
-            cnn_hist,
-            cnn_background,
-            test_size=1 - config.calibration_split_ratio,
-            random_state=config.calibration_split_seed,
-        )
+
+    (
+        truth_calib,
+        truth_test,
+        qpens_calib,
+        qpens_test,
+        cnn_calib,
+        cnn_test,
+        cnn_bg_calib,
+        cnn_bg_test,
+    ) = train_test_split(
+        truth_hist,
+        qpens_hist,
+        cnn_hist,
+        cnn_background,
+        test_size=1 - config.calibration_split_ratio,
+        random_state=config.calibration_split_seed,
     )
-    
+
     # cnn_background as input for RF
     norm_calib = get_rf_norm(cnn_bg_calib, rf)
     norm_test = get_rf_norm(cnn_bg_test, rf)
-    
+
     if ens_mean:
         norm_calib = np.mean(norm_calib, axis=-1)
         norm_test = np.mean(norm_test, axis=-1)
 
     quantiles, coverage, upper, lower = cp_main(
-        cnn_calib, qpens_calib, cnn_test, qpens_test,
+        cnn_calib,
+        qpens_calib,
+        cnn_test,
+        qpens_test,
         normalize=True,
         external_norm_calib=norm_calib,
         external_norm_test=norm_test,
-        ens_mean=ens_mean
+        ens_mean=ens_mean,
     )
 
     print(f"Target coverage: {config.calibration_quantile:.0%}")
@@ -623,7 +633,7 @@ def rf_normalized_cp(
     print(f"Mean Coverage: {mean_coverage}")
     visualize_coverage(coverage, cp_hist_name + "_rf_norm")
     visualize_quantile_intervals(quantiles, cp_hist_name + "_rf_norm")
-    
+
     cnn_test_std = np.std(cnn_test, axis=-1)
     visualize_coverage_gridpoints(
         upper,
