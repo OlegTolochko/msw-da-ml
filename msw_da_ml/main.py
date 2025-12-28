@@ -186,7 +186,12 @@ def compare_uq_methods(
         Whether to also run normalized CP for comparison.
     """
     generate_comparison_analysis(
-        cp_hist_name, cqr_hist_name, mcdo_hist_name, nig_hist_name, normalize_cp, include_cnn_std
+        cp_hist_name,
+        cqr_hist_name,
+        mcdo_hist_name,
+        nig_hist_name,
+        normalize_cp,
+        include_cnn_std,
     )
 
 

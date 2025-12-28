@@ -62,9 +62,13 @@ def generate_comparison_analysis(
     nig_histories = load_nig_histories(nig_hist_name)
     nig_qpens_hist = np.asarray([history.qpens_analysis for history in nig_histories])
     nig_truth_hist = np.asarray([history.truth for history in nig_histories])
-    nig_cnn_gamma = np.asarray([history.cnn_analysis_gamma for history in nig_histories])
+    nig_cnn_gamma = np.asarray(
+        [history.cnn_analysis_gamma for history in nig_histories]
+    )
     nig_cnn_nu = np.asarray([history.cnn_analysis_nu for history in nig_histories])
-    nig_cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in nig_histories])
+    nig_cnn_alpha = np.asarray(
+        [history.cnn_analysis_alpha for history in nig_histories]
+    )
     nig_cnn_beta = np.asarray([history.cnn_analysis_beta for history in nig_histories])
 
     # Split size
@@ -238,7 +242,7 @@ def generate_comparison_analysis(
         methods.append("MCDO STD")
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
-    
+
     if nig_hist_name:
         methods.append("NIG STD")
         coverages.append(nig_coverage)
@@ -247,12 +251,8 @@ def generate_comparison_analysis(
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = f"uq_method_comparison_{timestamp}"
 
-    plot_coverage_comparison(
-        coverages, methods, save_name, ens_mean=ens_mean
-    )
-    plot_interval_width_comparison(
-        intervals, methods, save_name, ens_mean=ens_mean
-    )
+    plot_coverage_comparison(coverages, methods, save_name, ens_mean=ens_mean)
+    plot_interval_width_comparison(intervals, methods, save_name, ens_mean=ens_mean)
 
     plot_coverage_and_width_joint(
         coverages,
