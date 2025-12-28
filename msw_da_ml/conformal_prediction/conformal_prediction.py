@@ -111,8 +111,8 @@ def cp_main(
         if external_norm_calib is not None:
             normalization_term = external_norm_calib
             normalization_term_test = external_norm_test
-            normalization_term[:, :, 2] += 1e-6
-            normalization_term_test[:, :, 2] += 1e-6
+            normalization_term[:, :, 2] += 1e-3
+            normalization_term_test[:, :, 2] += 1e-3
             normalization_term[:, :, 1] += height_eps
             normalization_term_test[:, :, 1] += height_eps
         else:
@@ -291,6 +291,78 @@ def mcdo_cp(
     print(f"  Epistemic: {auroc_epistemic:.4f}")
     print(f"  Aleatoric: {auroc_aleatoric:.4f}")
     print(f"  Total:     {auroc_total:.4f}")
+
+
+@app.command()
+def mcdo_cp_simple(
+    mcdo_hist_name: str,
+    cp_normalized: bool = False,
+    ens_mean: bool = False,
+):
+    histories = load_mcdo_histories(mcdo_hist_name)
+
+    qpens_hist = np.asarray([history.qpens_analysis for history in histories])
+    truth_hist = np.asarray([history.truth for history in histories])
+    cnn_mean_mcdo_hist = np.asarray(
+        [history.cnn_analysis_mean for history in histories]
+    )[..., 0]
+    cnn_logvar_mcdo_hist = np.asarray(
+        [history.cnn_analysis_logvar for history in histories]
+    )[..., 0]
+    var_pred = np.exp(cnn_logvar_mcdo_hist)
+
+    (
+        truth_calib,
+        truth_test,
+        qpens_calib,
+        qpens_test,
+        cnn_calib,
+        cnn_test,
+        cnn_var_calib,
+        cnn_var_test,
+    ) = train_test_split(
+        truth_hist,
+        qpens_hist,
+        cnn_mean_mcdo_hist,
+        var_pred,
+        test_size=1 - config.calibration_split_ratio,
+        random_state=config.calibration_split_seed,
+    )
+    if cp_normalized:
+        mcdo_hist_name += "_normalized"
+        external_norm_calib = np.sqrt(cnn_var_calib)
+        external_norm_test = np.sqrt(cnn_var_test)
+    else:
+        external_norm_calib = None
+        external_norm_test = None
+
+    quantiles, coverage, upper_intervals, lower_intervals = cp_main(
+        cnn_calib=cnn_calib,
+        qpens_calib=qpens_calib,
+        cnn_test=cnn_test,
+        qpens_test=qpens_test,
+        normalize=cp_normalized,
+        external_norm_calib=external_norm_calib,
+        external_norm_test=external_norm_test,
+        ens_mean=ens_mean
+    )
+
+    mean_coverage = np.mean(coverage)
+    print(f"Mean Coverage: {mean_coverage:.4f}")
+    visualize_coverage(coverage, hist_name=mcdo_hist_name)
+    visualize_quantile_intervals(quantiles, mcdo_hist_name)
+    print(np.max(quantiles))
+
+    visualize_coverage_gridpoints(
+        upper_intervals,
+        lower_intervals,
+        truth_test,
+        qpens_test,
+        cnn_test,
+        mcdo_hist_name,
+        random_seed=4,
+        timestep=170,
+    )
 
 
 @app.command()
