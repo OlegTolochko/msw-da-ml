@@ -70,6 +70,10 @@ def load_trained_model(
 
     load_normalization_name = f"norm_{load_model_name.removesuffix('.pth')}"
     norm_stats_path = os.path.join(normalization_path, f"{load_normalization_name}.pt")
+    if not os.path.exists(norm_stats_path):
+        norm_stats_path = os.path.join(
+            normalization_path, f"{load_model_name.removesuffix('.pth')}.pt"
+        )
     norm_stats = torch.load(norm_stats_path, map_location=device)
 
     return model, norm_stats
