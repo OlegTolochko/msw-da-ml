@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
+import joblib
 from datetime import datetime
 from scipy.stats import norm
 
@@ -17,7 +18,10 @@ from msw_da_ml.conformal_prediction.mcdo_data_generation import (
 from msw_da_ml.conformal_prediction.conformal_prediction import (
     calibrate,
     check_coverage,
+    get_rf_norm,
+    cp_main,
 )
+from msw_da_ml.conformal_prediction.rf_training import get_rf_model_path
 from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     calibrate_quantile_intervals_symmetric,
     apply_symmetric_quantile_adjustments,
@@ -41,6 +45,7 @@ def generate_comparison_analysis(
     nig_hist_name: str = "",
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
+    include_rf: bool = False,
     ens_mean: bool = False,
 ):
     """
@@ -51,6 +56,8 @@ def generate_comparison_analysis(
     cp_truth = np.asarray([h.truth for h in cp_histories])
     cp_qpens = np.asarray([h.qpens_analysis for h in cp_histories])
     cp_cnn = np.asarray([h.cnn_analysis for h in cp_histories])
+    if include_rf:
+        cp_cnn_background = np.asarray([h.cnn_background for h in cp_histories])
 
     # CQR data
     cqr_histories = load_qr_histories(cqr_hist_name)
@@ -76,16 +83,35 @@ def generate_comparison_analysis(
     test_size = 1 - config.calibration_split_ratio
 
     # CP splits
-    (
-        cp_truth_calib,
-        cp_truth_test,
-        cp_qpens_calib,
-        cp_qpens_test,
-        cp_cnn_calib,
-        cp_cnn_test,
-    ) = train_test_split(
-        cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
-    )
+    if include_rf:
+        (
+            cp_truth_calib,
+            cp_truth_test,
+            cp_qpens_calib,
+            cp_qpens_test,
+            cp_cnn_calib,
+            cp_cnn_test,
+            cp_cnn_bg_calib,
+            cp_cnn_bg_test,
+        ) = train_test_split(
+            cp_truth,
+            cp_qpens,
+            cp_cnn,
+            cp_cnn_background,
+            test_size=test_size,
+            random_state=random_state,
+        )
+    else:
+        (
+            cp_truth_calib,
+            cp_truth_test,
+            cp_qpens_calib,
+            cp_qpens_test,
+            cp_cnn_calib,
+            cp_cnn_test,
+        ) = train_test_split(
+            cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
+        )
 
     # CQR splits
     (
@@ -224,6 +250,31 @@ def generate_comparison_analysis(
             nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
         )
 
+    # Run RF Normalized CP
+    if include_rf:
+        rf_path = get_rf_model_path()
+        if not os.path.exists(rf_path):
+            raise FileNotFoundError(f"RF model not found at {rf_path}.")
+        rf = joblib.load(rf_path)
+
+        rf_norm_calib = get_rf_norm(cp_cnn_bg_calib, rf)
+        rf_norm_test = get_rf_norm(cp_cnn_bg_test, rf)
+
+        if ens_mean:
+            rf_norm_calib = np.mean(rf_norm_calib, axis=-1)
+            rf_norm_test = np.mean(rf_norm_test, axis=-1)
+
+        _, rf_coverage, rf_upper, rf_lower = cp_main(
+            cp_cnn_calib,
+            cp_qpens_calib,
+            cp_cnn_test,
+            cp_qpens_test,
+            normalize=True,
+            external_norm_calib=rf_norm_calib,
+            external_norm_test=rf_norm_test,
+            ens_mean=ens_mean,
+        )
+
     # Comparison plots:
     methods = ["CP", "CQR"]
     coverages = [cp_coverage, cqr_coverage]
@@ -247,6 +298,11 @@ def generate_comparison_analysis(
         methods.append("NIG STD")
         coverages.append(nig_coverage)
         intervals.append((nig_lower, nig_upper))
+
+    if include_rf:
+        methods.append("RF Normalized CP")
+        coverages.append(rf_coverage)
+        intervals.append((rf_lower, rf_upper))
 
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = f"uq_method_comparison_{timestamp}"
