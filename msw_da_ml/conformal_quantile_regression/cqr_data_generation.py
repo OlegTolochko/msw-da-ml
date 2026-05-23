@@ -21,13 +21,13 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-experiments_path = get_output_dir(
-    global_config.quantile_experiment_histories_out_filename
+sequences_path = get_output_dir(
+    global_config.quantile_evaluation_sequences_out_filename
 )
 
 
 @dataclass
-class QuantileExperimentHistory:
+class CqrEvaluationSequence:
     truth: List[np.ndarray]
     enkf_analysis: List[np.ndarray]
     qpens_analysis: List[np.ndarray]
@@ -36,7 +36,7 @@ class QuantileExperimentHistory:
     seed: int
 
 
-class ExperimentPipeline:
+class CqrEvaluationSequenceGenerator:
     def __init__(self, load_model_name: str = ""):
         self.device = (
             "mps"
@@ -49,7 +49,7 @@ class ExperimentPipeline:
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
-    ) -> QuantileExperimentHistory:
+    ) -> CqrEvaluationSequence:
         rngs = RandomGenerators.from_seed(seed)
 
         truth_model = EnsembleModel(
@@ -70,7 +70,7 @@ class ExperimentPipeline:
         qpens = QPEnsemble()
         obs_generator = ObservationGenerator(rngs)
 
-        histories = QuantileExperimentHistory(
+        sequence = CqrEvaluationSequence(
             truth=[],
             enkf_analysis=[],
             qpens_analysis=[],
@@ -82,7 +82,7 @@ class ExperimentPipeline:
         for i in range(num_inference_steps):
             truth_model.propagate()
             truth_state = truth_model.get_state()
-            histories.truth.append(truth_state.copy())
+            sequence.truth.append(truth_state.copy())
 
             obs_data = obs_generator.generate_observations_with_locations(
                 truth_state, experiment_config.num_ensemble_members
@@ -95,7 +95,7 @@ class ExperimentPipeline:
                 enkf_state, obs_data.observation, obs_data.locations
             )
             enkf_model.assimilate(enkf_assimilated)
-            histories.enkf_analysis.append(enkf_assimilated.copy())
+            sequence.enkf_analysis.append(enkf_assimilated.copy())
 
             qpens_model.propagate()
             qpens_state = qpens_model.get_state()
@@ -104,7 +104,7 @@ class ExperimentPipeline:
                 qpens_state, obs_data.observation, obs_data.locations
             )
             qpens_model.assimilate(qpens_assimilated)
-            histories.qpens_analysis.append(qpens_assimilated.copy())
+            sequence.qpens_analysis.append(qpens_assimilated.copy())
 
             cnn_model.propagate()
             cnn_state = cnn_model.get_state()
@@ -119,10 +119,10 @@ class ExperimentPipeline:
             cnn_corrected = 0.5 * (cnn_lower_quantile + cnn_upper_quantile)
             cnn_model.assimilate(cnn_corrected)
 
-            histories.cnn_analysis_lower_quantiles.append(cnn_lower_quantile.copy())
-            histories.cnn_analysis_upper_quantiles.append(cnn_upper_quantile.copy())
+            sequence.cnn_analysis_lower_quantiles.append(cnn_lower_quantile.copy())
+            sequence.cnn_analysis_upper_quantiles.append(cnn_upper_quantile.copy())
 
-        return histories
+        return sequence
 
     def _apply_cnn_correction(
         self, assimilated_state: np.ndarray, observation_locations: np.ndarray
@@ -163,11 +163,11 @@ class ExperimentPipeline:
         return corrected_lower_quantile_permuted, corrected_upper_quantile_permuted
 
 
-def run_pipeline(
+def generate_cqr_evaluation_sequences(
     load_model_name: str = "",
-) -> Tuple[List[QuantileExperimentHistory], str]:
-    pipeline = ExperimentPipeline(load_model_name)
-    all_histories = []
+) -> Tuple[List[CqrEvaluationSequence], str]:
+    generator = CqrEvaluationSequenceGenerator(load_model_name)
+    sequences = []
 
     for i in range(experiment_config.num_seeds):
         seed = experiment_config.base_seed + i
@@ -175,53 +175,57 @@ def run_pipeline(
             f"Running experiment {i + 1}/{experiment_config.num_seeds} with seed {seed}"
         )
 
-        history = pipeline.run_single_experiment(
+        sequence = generator.run_single_experiment(
             seed, experiment_config.num_inference_steps
         )
-        all_histories.append(history)
+        sequences.append(sequence)
 
-    return all_histories, load_model_name
+    return sequences, load_model_name
 
 
-def save_histories(
-    histories: List[QuantileExperimentHistory],
+def save_cqr_evaluation_sequences(
+    sequences: List[CqrEvaluationSequence],
     loaded_model_name: str,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    save_name = f"quantile_hist_{str.removesuffix(loaded_model_name, '.pth')}_{timestamp}_{experiment_config.base_seed}_{experiment_config.num_seeds}.npz"
-    save_path = os.path.join(experiments_path, save_name)
+    save_name = (
+        f"cqr_evaluation_sequence_{str.removesuffix(loaded_model_name, '.pth')}"
+        f"_{timestamp}_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
+        f"_T{experiment_config.num_inference_steps}.npz"
+    )
+    save_path = os.path.join(sequences_path, save_name)
     save_data = {}
 
-    for i, hist in enumerate(histories):
-        save_data[f"truth_{i}"] = np.array(hist.truth)
-        save_data[f"enkf_analysis_{i}"] = np.array(hist.enkf_analysis)
-        save_data[f"qpens_analysis_{i}"] = np.array(hist.qpens_analysis)
+    for i, sequence in enumerate(sequences):
+        save_data[f"truth_{i}"] = np.array(sequence.truth)
+        save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
+        save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
         save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(
-            hist.cnn_analysis_lower_quantiles
+            sequence.cnn_analysis_lower_quantiles
         )
         save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(
-            hist.cnn_analysis_upper_quantiles
+            sequence.cnn_analysis_upper_quantiles
         )
-        save_data[f"seed_{i}"] = hist.seed
+        save_data[f"seed_{i}"] = sequence.seed
 
-    save_data["num_experiments"] = len(histories)
+    save_data["num_experiments"] = len(sequences)
 
     np.savez_compressed(save_path, **save_data)
-    print(f"Quantile histories saved to {save_path}")
+    print(f"CQR evaluation sequences saved to {save_path}")
     return save_name
 
 
-def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
+def load_cqr_evaluation_sequences(load_name: str) -> List[CqrEvaluationSequence]:
     if not load_name.endswith(".npz"):
         load_name += ".npz"
 
-    load_path = os.path.join(experiments_path, load_name)
+    load_path = os.path.join(sequences_path, load_name)
     data = np.load(load_path)
     num_experiments = int(data["num_experiments"])
 
-    histories = []
+    sequences = []
     for i in range(num_experiments):
-        history = QuantileExperimentHistory(
+        sequence = CqrEvaluationSequence(
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
@@ -233,18 +237,18 @@ def load_histories(load_name: str) -> List[QuantileExperimentHistory]:
             ),
             seed=int(data[f"seed_{i}"]),
         )
-        histories.append(history)
+        sequences.append(sequence)
 
-    return histories
+    return sequences
 
 
-def generate_experiment_data_qr(model_name: str = ""):
-    histories, loaded_model_name = run_pipeline(model_name)
-    save_name = save_histories(histories, loaded_model_name)
+def generate_cqr_evaluation_data(model_name: str = ""):
+    sequences, loaded_model_name = generate_cqr_evaluation_sequences(model_name)
+    save_name = save_cqr_evaluation_sequences(sequences, loaded_model_name)
 
-    print(f"Generated {len(histories)} quantile experiment histories")
+    print(f"Generated {len(sequences)} CQR evaluation sequences")
     return save_name
 
 
 if __name__ == "__main__":
-    generate_experiment_data_qr()
+    generate_cqr_evaluation_data()

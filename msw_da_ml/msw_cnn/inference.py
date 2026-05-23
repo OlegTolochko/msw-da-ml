@@ -11,7 +11,7 @@ from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.msw.observation_generation import ObservationGenerator
 from msw_da_ml.msw.msw_model import EnsembleModel
 from msw_da_ml.msw.random_manager import RandomGenerators
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.msw.compare_histories import ModelComparatorVisualizer
 
 app = App()
@@ -95,7 +95,10 @@ def inference(
         if torch.backends.mps.is_available()
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    model, norm_stats = load_trained_model(load_model_name, device)
+    model, norm_stats = load_trained_model(
+        load_model_name=load_model_name,
+        device=device,
+    )
 
     mean_in = norm_stats["mean_in"]
     std_in = norm_stats["std_in"]
@@ -175,12 +178,12 @@ def inference(
 
 
 @app.command()
-def visualize_from_model(model_name: str):
-    data = DataGenerationPipeline.load_pipeline_state(pipeline_state_name=model_name)
+def visualize_from_training_sequence(sequence_name: str):
+    data = TrainingSequenceGenerator.load_training_sequence(sequence_name)
 
     truth_model = data.models["truth"]
     qp_model = data.models["ensemble_qp"]
-    visualize_update_performance(qp_model, truth_model, model_name)
+    visualize_update_performance(qp_model, truth_model, sequence_name, "QPEns", "Truth")
 
 
 def visualize_update_performance(

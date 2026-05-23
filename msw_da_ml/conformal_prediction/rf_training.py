@@ -5,8 +5,8 @@ import torch
 from sklearn.ensemble import RandomForestRegressor
 from cyclopts import App
 
-from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
+from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.msw_cnn.inference import load_trained_model
 from msw_da_ml.settings import load_settings, get_output_dir
 
@@ -21,14 +21,12 @@ def get_rf_model_path():
 
 
 @app.command()
-def train_rf(training_data_name: str, cnn_model_name: str):
+def train_rf(training_sequence_name: str, cnn_model_name: str):
     """
     Trains a Random Forest to predict absolute residuals (errors).
     """
-    print(f"Loading training data from {training_data_name}")
-    data = DataGenerationPipeline.load_pipeline_state(
-        pipeline_state_name=training_data_name
-    )
+    print(f"Loading training sequence from {training_sequence_name}")
+    data = TrainingSequenceGenerator.load_training_sequence(training_sequence_name)
 
     kf_data = np.array(data.histories["kf"])
     qp_data = np.array(data.histories["qp"])
@@ -97,12 +95,12 @@ def train_rf(training_data_name: str, cnn_model_name: str):
 
 
 @app.command()
-def train_rf_from_hist(cp_hist_name: str):
+def train_rf_from_sequence(sequence_name: str):
     """
-    Trains a Random Forest to predict absolute residuals (errors) from experiment histories.
+    Trains a Random Forest to predict absolute residuals from evaluation sequences.
     """
-    print(f"Loading histories from {cp_hist_name}")
-    histories = load_histories(cp_hist_name)
+    print(f"Loading evaluation sequences from {sequence_name}")
+    histories = load_evaluation_sequences(sequence_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])

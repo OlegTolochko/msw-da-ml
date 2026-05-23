@@ -1,7 +1,3 @@
-import os
-from typing import List
-import datetime
-
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import numpy as np

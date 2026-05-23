@@ -1,24 +1,19 @@
-import os
 from typing import List
-import datetime
+from datetime import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from msw_da_ml.conformal_prediction.cp_data_generation import ExperimentHistory
+from msw_da_ml.data.evaluation_sequences import EvaluationSequence
 from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 experiment_config = settings.experiment_config
-
 global_config = settings.global_config
 
-experiments_path = get_output_dir(global_config.experiment_histories_out_filename)
 
-
-def uhr_rmse_comparison(histories: List[ExperimentHistory]):
+def uhr_rmse_comparison(histories: List[EvaluationSequence]):
     """Create RMSE comparison plots for background and analysis states"""
-    num_experiments = len(histories)
     num_steps = len(histories[0].truth)
 
     variables = ["u", "h", "r"]

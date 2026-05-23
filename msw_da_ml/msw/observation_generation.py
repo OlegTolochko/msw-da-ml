@@ -1,6 +1,5 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Tuple
 
 from msw_da_ml.settings import load_settings
 

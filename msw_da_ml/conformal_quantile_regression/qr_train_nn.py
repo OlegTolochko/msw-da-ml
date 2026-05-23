@@ -26,7 +26,8 @@ quantile_normalization_path = get_output_dir(
 
 @app.command()
 def train_quantile_nn(
-    pipeline_state_name: str,
+    training_sequence_name: str,
+    model_name: str = "quantile_model",
     quantile_tau: float = 0.9,
     include_timestamp_in_name: bool = True,
 ):
@@ -36,7 +37,6 @@ def train_quantile_nn(
         else ("cuda" if torch.cuda.is_available() else "cpu")
     )
 
-    model_name = f"quantile_{training_config.model_save_name}"
     if include_timestamp_in_name:
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
@@ -44,7 +44,7 @@ def train_quantile_nn(
     model = QuantileCNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        pipeline_state_name,
+        training_sequence_name,
         device,
         model_name,
         normalization_path=quantile_normalization_path,

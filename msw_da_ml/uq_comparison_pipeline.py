@@ -2,29 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import os
+import joblib
 from datetime import datetime
 from scipy.stats import norm
 
-from msw_da_ml.conformal_prediction.cp_data_generation import (
-    load_histories as load_cp_histories,
+from msw_da_ml.data.evaluation_sequences import (
+    load_evaluation_sequences as load_cp_sequences,
 )
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
-    load_histories as load_qr_histories,
+    load_cqr_evaluation_sequences,
 )
 from msw_da_ml.conformal_prediction.mcdo_data_generation import (
-    load_histories as load_mcdo_histories,
+    load_mcdo_evaluation_sequences,
 )
 from msw_da_ml.conformal_prediction.conformal_prediction import (
     calibrate,
     check_coverage,
+    get_rf_norm,
+    cp_main,
 )
+from msw_da_ml.conformal_prediction.rf_training import get_rf_model_path
 from msw_da_ml.conformal_quantile_regression.cqr_prediction import (
     calibrate_quantile_intervals_symmetric,
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
 from msw_da_ml.evidential_regression.er_nig_data_generation import (
-    load_histories as load_nig_histories,
+    load_nig_evaluation_sequences,
 )
 from msw_da_ml.settings import load_settings, get_output_dir
 
@@ -35,57 +39,79 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 def generate_comparison_analysis(
-    cp_hist_name: str,
-    cqr_hist_name: str,
-    mcdo_hist_name: str = "",
-    nig_hist_name: str = "",
+    cp_sequence_name: str,
+    cqr_sequence_name: str,
+    mcdo_sequence_name: str = "",
+    nig_sequence_name: str = "",
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
-    ens_mean: bool = False,
+    include_rf: bool = False,
+    ens_mean: bool = True,
 ):
     """
     Generate comparison plots between CP, normalized CP, CQR, and optionally MCDO methods.
     """
     # CP data
-    cp_histories = load_cp_histories(cp_hist_name)
+    cp_histories = load_cp_sequences(cp_sequence_name)
     cp_truth = np.asarray([h.truth for h in cp_histories])
     cp_qpens = np.asarray([h.qpens_analysis for h in cp_histories])
     cp_cnn = np.asarray([h.cnn_analysis for h in cp_histories])
+    if include_rf:
+        cp_cnn_background = np.asarray([h.cnn_background for h in cp_histories])
 
     # CQR data
-    cqr_histories = load_qr_histories(cqr_hist_name)
+    cqr_histories = load_cqr_evaluation_sequences(cqr_sequence_name)
     cqr_truth = np.asarray([h.truth for h in cqr_histories])
     cqr_qpens = np.asarray([h.qpens_analysis for h in cqr_histories])
     cqr_lower = np.asarray([h.cnn_analysis_lower_quantiles for h in cqr_histories])
     cqr_upper = np.asarray([h.cnn_analysis_upper_quantiles for h in cqr_histories])
 
-    nig_histories = load_nig_histories(nig_hist_name)
-    nig_qpens_hist = np.asarray([history.qpens_analysis for history in nig_histories])
-    nig_truth_hist = np.asarray([history.truth for history in nig_histories])
-    nig_cnn_gamma = np.asarray(
-        [history.cnn_analysis_gamma for history in nig_histories]
-    )
-    nig_cnn_nu = np.asarray([history.cnn_analysis_nu for history in nig_histories])
-    nig_cnn_alpha = np.asarray(
-        [history.cnn_analysis_alpha for history in nig_histories]
-    )
-    nig_cnn_beta = np.asarray([history.cnn_analysis_beta for history in nig_histories])
+    if nig_sequence_name:
+        nig_sequences = load_nig_evaluation_sequences(nig_sequence_name)
+        nig_qpens_hist = np.asarray([sequence.qpens_analysis for sequence in nig_sequences])
+        nig_cnn_gamma = np.asarray(
+            [sequence.cnn_analysis_gamma for sequence in nig_sequences]
+        )
+        nig_cnn_nu = np.asarray([sequence.cnn_analysis_nu for sequence in nig_sequences])
+        nig_cnn_alpha = np.asarray(
+            [sequence.cnn_analysis_alpha for sequence in nig_sequences]
+        )
+        nig_cnn_beta = np.asarray([sequence.cnn_analysis_beta for sequence in nig_sequences])
 
     # Split size
     random_state = config.calibration_split_seed
     test_size = 1 - config.calibration_split_ratio
 
     # CP splits
-    (
-        cp_truth_calib,
-        cp_truth_test,
-        cp_qpens_calib,
-        cp_qpens_test,
-        cp_cnn_calib,
-        cp_cnn_test,
-    ) = train_test_split(
-        cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
-    )
+    if include_rf:
+        (
+            cp_truth_calib,
+            cp_truth_test,
+            cp_qpens_calib,
+            cp_qpens_test,
+            cp_cnn_calib,
+            cp_cnn_test,
+            cp_cnn_bg_calib,
+            cp_cnn_bg_test,
+        ) = train_test_split(
+            cp_truth,
+            cp_qpens,
+            cp_cnn,
+            cp_cnn_background,
+            test_size=test_size,
+            random_state=random_state,
+        )
+    else:
+        (
+            cp_truth_calib,
+            cp_truth_test,
+            cp_qpens_calib,
+            cp_qpens_test,
+            cp_cnn_calib,
+            cp_cnn_test,
+        ) = train_test_split(
+            cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
+        )
 
     # CQR splits
     (
@@ -168,17 +194,23 @@ def generate_comparison_analysis(
     )
 
     # Run MCDO STD
-    if mcdo_hist_name:
-        mcdo_histories = load_mcdo_histories(mcdo_hist_name)
+    if mcdo_sequence_name:
+        mcdo_histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
         mcdo_qpens = np.asarray([h.qpens_analysis for h in mcdo_histories])
         mcdo_cnn_mean = np.asarray([h.cnn_analysis_mean for h in mcdo_histories])
         mcdo_cnn_logvar = np.asarray([h.cnn_analysis_logvar for h in mcdo_histories])
 
+        if ens_mean:
+            mcdo_cnn_mean = np.mean(mcdo_cnn_mean, axis=-2)
+            mcdo_cnn_vars = np.mean(np.exp(mcdo_cnn_logvar), axis=-2)
+        else:
+            mcdo_cnn_vars = np.exp(mcdo_cnn_logvar)
+
         epistemic_var = np.var(mcdo_cnn_mean, axis=-1)
-        aleatoric_var = np.mean(np.exp(mcdo_cnn_logvar), axis=-1)
+        aleatoric_var = np.mean(mcdo_cnn_vars, axis=-1)
         total_std = np.sqrt(epistemic_var + aleatoric_var)
 
-        mcdo_mean_pred = np.mean(mcdo_cnn_mean, axis=(-1))
+        mcdo_mean_pred = np.mean(mcdo_cnn_mean, axis=-1)
 
         alpha = 1 - config.calibration_quantile
         z_score = norm.ppf(1 - alpha / 2)
@@ -187,11 +219,11 @@ def generate_comparison_analysis(
         mcdo_lower = mcdo_mean_pred - z_score * total_std
 
         mcdo_coverage = check_coverage(
-            mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=False
+            mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=ens_mean
         )
 
     # Run NIG STD
-    if nig_hist_name:
+    if nig_sequence_name:
         if ens_mean:
             nig_cnn_gamma_mean = np.mean(nig_cnn_gamma, axis=-1)
             nig_cnn_nu_mean = np.mean(nig_cnn_nu, axis=-1)
@@ -224,6 +256,31 @@ def generate_comparison_analysis(
             nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
         )
 
+    # Run RF Normalized CP
+    if include_rf:
+        rf_path = get_rf_model_path()
+        if not os.path.exists(rf_path):
+            raise FileNotFoundError(f"RF model not found at {rf_path}.")
+        rf = joblib.load(rf_path)
+
+        rf_norm_calib = get_rf_norm(cp_cnn_bg_calib, rf)
+        rf_norm_test = get_rf_norm(cp_cnn_bg_test, rf)
+
+        if ens_mean:
+            rf_norm_calib = np.mean(rf_norm_calib, axis=-1)
+            rf_norm_test = np.mean(rf_norm_test, axis=-1)
+
+        _, rf_coverage, rf_upper, rf_lower = cp_main(
+            cp_cnn_calib,
+            cp_qpens_calib,
+            cp_cnn_test,
+            cp_qpens_test,
+            normalize=True,
+            external_norm_calib=rf_norm_calib,
+            external_norm_test=rf_norm_test,
+            ens_mean=ens_mean,
+        )
+
     # Comparison plots:
     methods = ["CP", "CQR"]
     coverages = [cp_coverage, cqr_coverage]
@@ -238,15 +295,20 @@ def generate_comparison_analysis(
         coverages.append(cnn_std_coverage)
         intervals.append((cnn_std_lower_intervals, cnn_std_upper_intervals))
 
-    if mcdo_hist_name:
+    if mcdo_sequence_name:
         methods.append("MCDO STD")
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
 
-    if nig_hist_name:
+    if nig_sequence_name:
         methods.append("NIG STD")
         coverages.append(nig_coverage)
         intervals.append((nig_lower, nig_upper))
+
+    if include_rf:
+        methods.append("RF Normalized CP")
+        coverages.append(rf_coverage)
+        intervals.append((rf_lower, rf_upper))
 
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = f"uq_method_comparison_{timestamp}"

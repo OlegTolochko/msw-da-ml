@@ -1,5 +1,6 @@
 import torch.nn.functional as F
 import torch.nn as nn
+import torch
 
 from msw_da_ml.settings import load_settings
 
@@ -51,8 +52,10 @@ class MCDOCNNModel(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        mean, var = x[:, :3], x[:, 3:]
+        mean_raw, logvar = x[:, :3], x[:, 3:]
 
-        mean[:, 1:2] = F.softplus(mean[:, 1:2])
-        var = F.softplus(var)
-        return mean, var
+        mean = torch.cat(
+            [mean_raw[:, :1], F.softplus(mean_raw[:, 1:2]), mean_raw[:, 2:]],
+            dim=1,
+        )
+        return mean, logvar

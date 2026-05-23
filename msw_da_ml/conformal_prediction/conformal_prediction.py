@@ -3,18 +3,17 @@ from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import roc_auc_score
 import joblib
 import os
 
-from msw_da_ml.conformal_prediction.cp_data_generation import load_histories
+from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.conformal_prediction.mcdo_data_generation import (
-    load_histories as load_mcdo_histories,
+    load_mcdo_evaluation_sequences,
 )
 from msw_da_ml.evidential_regression.er_nig_data_generation import (
-    load_histories as load_nig_histories,
+    load_nig_evaluation_sequences,
 )
 from msw_da_ml.conformal_prediction.rf_training import get_rf_model_path
 
@@ -29,7 +28,7 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 @app.command()
 def conformal_prediction(
-    cp_hist_name: str,
+    sequence_name: str,
     normalize: bool = False,
     num_iterations: int = 10,
     generative_visualizations: bool = True,
@@ -38,14 +37,14 @@ def conformal_prediction(
     """
     Runs conformal prediction pipeline.
     """
-    histories = load_histories(cp_hist_name)
+    histories = load_evaluation_sequences(sequence_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
-    viz_hist_name = cp_hist_name
+    viz_sequence_name = sequence_name
     if normalize:
-        viz_hist_name += "_normalized"
+        viz_sequence_name += "_normalized"
 
     coverages = []
     all_lower_intervals = []
@@ -62,7 +61,7 @@ def conformal_prediction(
             )
         )
         quantiles, coverage, upper_intervals, lower_intervals = cp_main(
-            cnn_calib, qpens_calib, cnn_test, qpens_test, normalize, ens_mean
+            cnn_calib, qpens_calib, cnn_test, qpens_test, normalize, ens_mean=ens_mean
         )
 
         coverages.append(coverage)
@@ -71,14 +70,14 @@ def conformal_prediction(
 
         if generative_visualizations and i == 0:
             # only visualize quantile intervals and gridpoint coverage for first iteration
-            visualize_quantile_intervals(quantiles, viz_hist_name)
+            visualize_quantile_intervals(quantiles, viz_sequence_name)
             visualize_coverage_gridpoints(
                 upper_intervals,
                 lower_intervals,
                 truth_test,
                 qpens_test,
                 cnn_test,
-                viz_hist_name,
+                viz_sequence_name,
             )
 
     print(f"Target coverage: {config.calibration_quantile:.0%}")
@@ -89,7 +88,7 @@ def conformal_prediction(
 
     coverage_iter_mean = np.mean(coverages, axis=0)
     if generative_visualizations:
-        visualize_coverage(coverage_iter_mean, viz_hist_name)
+        visualize_coverage(coverage_iter_mean, viz_sequence_name)
 
     return coverages, all_lower_intervals, all_upper_intervals
 
@@ -106,6 +105,7 @@ def cp_main(
 ):
     normalization_term = 1
     normalization_term_test = 1.0
+    using_internal_std_norm = False
     if normalize:
         height_eps = 0.01
         if external_norm_calib is not None:
@@ -117,6 +117,7 @@ def cp_main(
             normalization_term_test[:, :, 1] += height_eps
         else:
             # Ensemble std if no external norm
+            using_internal_std_norm = True
             cnn_std = np.std(cnn_calib, axis=-1)
             cnn_std[:, :, 2] += config.rain_normalization_eps
             normalization_term = cnn_std
@@ -124,6 +125,10 @@ def cp_main(
             cnn_test_std = np.std(cnn_test, axis=-1)
             cnn_test_std[:, :, 2] += config.rain_normalization_eps
             normalization_term_test = cnn_test_std
+
+    if normalize and using_internal_std_norm and not ens_mean:
+        normalization_term = normalization_term[..., None]
+        normalization_term_test = normalization_term_test[..., None]
 
     # Since CNN is trained on qpens predictions, qpens is the truth for the CNN
     quantiles = calibrate(
@@ -167,8 +172,8 @@ def cp_main(
 
 
 @app.command()
-def cnn_std_cov(cp_hist_name: str):
-    histories = load_histories(cp_hist_name)
+def cnn_std_cov(sequence_name: str):
+    histories = load_evaluation_sequences(sequence_name)
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
 
@@ -187,17 +192,17 @@ def cnn_std_cov(cp_hist_name: str):
     coverage = check_coverage(qpens_hist, upper_intervals, lower_intervals)
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage}")
-    visualize_coverage(coverage, cp_hist_name + "_cnn_std")
+    visualize_coverage(coverage, sequence_name + "_cnn_std")
 
 
 @app.command()
 def mcdo_cp(
-    mcdo_hist_name: str,
+    mcdo_sequence_name: str,
     cp_normalized: bool = False,
     ens_mean: bool = True,
     epistemic_norm: bool = False,
 ):
-    histories = load_mcdo_histories(mcdo_hist_name)
+    histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
@@ -207,13 +212,12 @@ def mcdo_cp(
     cnn_logvar_mcdo_hist = np.asarray(
         [history.cnn_analysis_logvar for history in histories]
     )
-    cnn_logvar_mcdo_hist = cnn_logvar_mcdo_hist.transpose(0, 1, 3, 4, 5, 2)
 
-    epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-2)
-    aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-2)
+    epistemic_var = np.var(cnn_mean_mcdo_hist, axis=-1)
+    aleatoric_var = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-1)
     total_std = np.sqrt(epistemic_var + aleatoric_var)
 
-    cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-2)
+    cnn_mcdo_mean = np.mean(cnn_mean_mcdo_hist, axis=-1)
 
     (
         truth_calib,
@@ -239,13 +243,16 @@ def mcdo_cp(
         random_state=config.calibration_split_seed,
     )
     if cp_normalized:
-        mcdo_hist_name += "_normalized"
+        mcdo_sequence_name += "_normalized"
         if epistemic_norm:
-            external_norm_calib = np.mean(np.sqrt(epistemic_calib), axis=-1)
-            external_norm_test = np.mean(np.sqrt(epistemic_test), axis=-1)
+            external_norm_calib = np.sqrt(epistemic_calib)
+            external_norm_test = np.sqrt(epistemic_test)
         else:
-            external_norm_calib = np.mean(std_calib, axis=-1)
-            external_norm_test = np.mean(std_test, axis=-1)
+            external_norm_calib = std_calib
+            external_norm_test = std_test
+        if ens_mean:
+            external_norm_calib = np.mean(external_norm_calib, axis=-1)
+            external_norm_test = np.mean(external_norm_test, axis=-1)
     else:
         external_norm_calib = None
         external_norm_test = None
@@ -258,8 +265,9 @@ def mcdo_cp(
         normalize=cp_normalized,
         external_norm_calib=external_norm_calib,
         external_norm_test=external_norm_test,
+        ens_mean=ens_mean,
     )
-    visualize_coverage(coverage, hist_name=mcdo_hist_name)
+    visualize_coverage(coverage, output_name=mcdo_sequence_name)
 
     if ens_mean:
         epistemic_test = epistemic_test.mean(axis=-1)
@@ -271,7 +279,7 @@ def mcdo_cp(
         truth_test,
         qpens_test,
         cnn_test,
-        mcdo_hist_name,
+        mcdo_sequence_name,
     )
 
     total_uncertainty = epistemic_test + alaetoric_test
@@ -287,7 +295,7 @@ def mcdo_cp(
     auroc_aleatoric = roc_auc_score(failure_flat, aleatoric_flat)
     auroc_total = roc_auc_score(failure_flat, total_flat)
 
-    print(f"OOD Detection (Prediction of Non-Coverage) AUROC:")
+    print("OOD Detection (Prediction of Non-Coverage) AUROC:")
     print(f"  Epistemic: {auroc_epistemic:.4f}")
     print(f"  Aleatoric: {auroc_aleatoric:.4f}")
     print(f"  Total:     {auroc_total:.4f}")
@@ -295,21 +303,22 @@ def mcdo_cp(
 
 @app.command()
 def mcdo_cp_simple(
-    mcdo_hist_name: str,
+    mcdo_sequence_name: str,
     cp_normalized: bool = False,
     ens_mean: bool = False,
 ):
-    histories = load_mcdo_histories(mcdo_hist_name)
+    histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
     cnn_mean_mcdo_hist = np.asarray(
         [history.cnn_analysis_mean for history in histories]
-    )[..., 0]
+    )
     cnn_logvar_mcdo_hist = np.asarray(
         [history.cnn_analysis_logvar for history in histories]
-    )[..., 0]
-    var_pred = np.exp(cnn_logvar_mcdo_hist)
+    )
+    cnn_mean_mcdo_hist = np.mean(cnn_mean_mcdo_hist, axis=-1)
+    var_pred = np.mean(np.exp(cnn_logvar_mcdo_hist), axis=-1)
 
     (
         truth_calib,
@@ -329,9 +338,12 @@ def mcdo_cp_simple(
         random_state=config.calibration_split_seed,
     )
     if cp_normalized:
-        mcdo_hist_name += "_normalized"
+        mcdo_sequence_name += "_normalized"
         external_norm_calib = np.sqrt(cnn_var_calib)
         external_norm_test = np.sqrt(cnn_var_test)
+        if ens_mean:
+            external_norm_calib = np.mean(external_norm_calib, axis=-1)
+            external_norm_test = np.mean(external_norm_test, axis=-1)
     else:
         external_norm_calib = None
         external_norm_test = None
@@ -344,13 +356,13 @@ def mcdo_cp_simple(
         normalize=cp_normalized,
         external_norm_calib=external_norm_calib,
         external_norm_test=external_norm_test,
-        ens_mean=ens_mean
+        ens_mean=ens_mean,
     )
 
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage:.4f}")
-    visualize_coverage(coverage, hist_name=mcdo_hist_name)
-    visualize_quantile_intervals(quantiles, mcdo_hist_name)
+    visualize_coverage(coverage, output_name=mcdo_sequence_name)
+    visualize_quantile_intervals(quantiles, mcdo_sequence_name)
     print(np.max(quantiles))
 
     visualize_coverage_gridpoints(
@@ -359,15 +371,15 @@ def mcdo_cp_simple(
         truth_test,
         qpens_test,
         cnn_test,
-        mcdo_hist_name,
+        mcdo_sequence_name,
         random_seed=4,
         timestep=170,
     )
 
 
 @app.command()
-def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
-    histories = load_mcdo_histories(mcdo_hist_name)
+def mcdo_std(mcdo_sequence_name: str, ens_mean: bool = False):
+    histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
@@ -413,24 +425,24 @@ def mcdo_std(mcdo_hist_name: str, ens_mean: bool = False):
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage:.4f}")
 
-    visualize_coverage(coverage, mcdo_hist_name + "_mcdo_std")
+    visualize_coverage(coverage, mcdo_sequence_name + "_mcdo_std")
     visualize_coverage_gridpoints(
         upper_intervals,
         lower_intervals,
         truth_hist,
         qpens_hist,
         cnn_mcdo_mean,
-        mcdo_hist_name + "_mcdo_std",
+        mcdo_sequence_name + "_mcdo_std",
         cnn_std=total_std,
     )
 
 
 @app.command()
-def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10.0):
+def nig_std(nig_sequence_name: str, ens_mean: bool = False, max_std_clip: float = 10.0):
     """
     Compute prediction intervals using NIG model uncertainty estimates.
     """
-    histories = load_nig_histories(nig_hist_name)
+    histories = load_nig_evaluation_sequences(nig_sequence_name)
 
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     truth_hist = np.asarray([history.truth for history in histories])
@@ -439,7 +451,7 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
     cnn_alpha = np.asarray([history.cnn_analysis_alpha for history in histories])
     cnn_beta = np.asarray([history.cnn_analysis_beta for history in histories])
 
-    print(f"NIG Parameter Statistics:")
+    print("NIG Parameter Statistics:")
     print(
         f"gamma: mean={np.mean(cnn_gamma):.4f}, std={np.std(cnn_gamma):.4f}, "
         f"min={np.min(cnn_gamma):.4f}, max={np.max(cnn_gamma):.4f}"
@@ -473,7 +485,7 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
     total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
     total_std = np.sqrt(total_var_clipped)
 
-    print(f"\nVariance Statistics (before clipping):")
+    print("\nVariance Statistics (before clipping):")
     print(
         f"aleatoric_var: mean={np.mean(aleatoric_var):.4f}, max={np.max(aleatoric_var):.4f}"
     )
@@ -502,7 +514,7 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
     lower_intervals = cnn_gamma - z_score * total_std
 
     interval_lengths = upper_intervals - lower_intervals
-    print(f"\nInterval Length Statistics:")
+    print("\nInterval Length Statistics:")
     print(f"mean={np.mean(interval_lengths):.4f}, std={np.std(interval_lengths):.4f}")
     print(f"min={np.min(interval_lengths):.4f}, max={np.max(interval_lengths):.4f}")
 
@@ -513,14 +525,14 @@ def nig_std(nig_hist_name: str, ens_mean: bool = False, max_std_clip: float = 10
     mean_coverage = np.mean(coverage)
     print(f"\nMean Coverage: {mean_coverage:.4f}")
 
-    visualize_coverage(coverage, nig_hist_name + "_nig_std")
+    visualize_coverage(coverage, nig_sequence_name + "_nig_std")
     visualize_coverage_gridpoints(
         upper_intervals,
         lower_intervals,
         truth_hist,
         qpens_hist,
         cnn_gamma,
-        nig_hist_name + "_nig_std",
+        nig_sequence_name + "_nig_std",
         cnn_std=total_std,
     )
 
@@ -577,7 +589,7 @@ def calibrate(
     return quantiles
 
 
-def visualize_coverage(coverage: np.ndarray, hist_name: str):
+def visualize_coverage(coverage: np.ndarray, output_name: str):
     # shape (num_seeds, num_timesteps, 3, 250) -> (num_timesteps, 3)
     if coverage.ndim == 5:
         coverage_gridpoint_mean = np.mean(coverage, axis=(-2, -1))
@@ -626,7 +638,7 @@ def visualize_coverage(coverage: np.ndarray, hist_name: str):
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
+    base_name = output_name.replace(".npz", "")
     save_path = f"{viz_dir}/{base_name}_conformal_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage visualization saved to: {save_path}")
@@ -642,7 +654,7 @@ def get_rf_norm(data, rf):
 
 @app.command()
 def rf_normalized_cp(
-    cp_hist_name: str,
+    sequence_name: str,
     rf_name: str = "",
     ens_mean: bool = False,
 ):
@@ -657,7 +669,7 @@ def rf_normalized_cp(
 
     rf = joblib.load(rf_path)
 
-    histories = load_histories(cp_hist_name)
+    histories = load_evaluation_sequences(sequence_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
@@ -703,8 +715,8 @@ def rf_normalized_cp(
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     mean_coverage = np.mean(coverage)
     print(f"Mean Coverage: {mean_coverage}")
-    visualize_coverage(coverage, cp_hist_name + "_rf_norm")
-    visualize_quantile_intervals(quantiles, cp_hist_name + "_rf_norm")
+    visualize_coverage(coverage, sequence_name + "_rf_norm")
+    visualize_quantile_intervals(quantiles, sequence_name + "_rf_norm")
 
     cnn_test_std = np.std(cnn_test, axis=-1)
     visualize_coverage_gridpoints(
@@ -713,14 +725,14 @@ def rf_normalized_cp(
         truth_test,
         qpens_test,
         cnn_test,
-        cp_hist_name + "_rf_norm",
+        sequence_name + "_rf_norm",
         cnn_std=cnn_test_std,
     )
 
     return quantiles, coverage
 
 
-def visualize_quantile_intervals(quantiles: np.ndarray, hist_name: str):
+def visualize_quantile_intervals(quantiles: np.ndarray, output_name: str):
     interval_length = 2 * quantiles
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -741,7 +753,7 @@ def visualize_quantile_intervals(quantiles: np.ndarray, hist_name: str):
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
+    base_name = output_name.replace(".npz", "")
     save_path = f"{viz_dir}/{base_name}_conformal_intervals.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval visualization saved to: {save_path}")
@@ -753,7 +765,7 @@ def visualize_coverage_gridpoints(
     truth,
     qpens,
     cnn,
-    hist_name: str,
+    output_name: str,
     cnn_std: np.ndarray = None,
     random_seed: int = 1,
     timestep: int = 50,
@@ -785,6 +797,9 @@ def visualize_coverage_gridpoints(
         upper_interval = np.mean(upper_interval, axis=-1)
     if lower_interval.ndim == 5:
         lower_interval = np.mean(lower_interval, axis=-1)
+
+    random_seed = min(random_seed, upper_interval.shape[0] - 1)
+    timestep = min(timestep, upper_interval.shape[1] - 1)
 
     upper_interval_seed_timestep = upper_interval[random_seed, timestep]
     lower_interval_seed_timestep = lower_interval[random_seed, timestep]
@@ -868,7 +883,7 @@ def visualize_coverage_gridpoints(
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
+    base_name = output_name.replace(".npz", "")
     save_path = (
         f"{viz_dir}/{base_name}_conformal_gridpoints_seed{random_seed}_t{timestep}.png"
     )
@@ -880,8 +895,6 @@ def plot_non_conformity_scores(
     non_conformity_scores, quantiles, random_seed: int = 10, timestep: int = 50
 ):
     scores = non_conformity_scores[random_seed, timestep]
-    quantiles_timestep = quantiles[timestep]
-
     fig, axes = plt.subplots(3, 1, figsize=(15, 15))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 

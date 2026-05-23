@@ -2,9 +2,10 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
-import os
 
-from msw_da_ml.conformal_quantile_regression.cqr_data_generation import load_histories
+from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
+    load_cqr_evaluation_sequences,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 
 app = App()
@@ -17,8 +18,8 @@ viz_dir = get_output_dir(global_config.visualizations_out_filename)
 
 
 @app.command()
-def raw_quantile_conformal_prediction(hist_name: str):
-    histories = load_histories(hist_name)
+def raw_quantile_conformal_prediction(sequence_name: str):
+    histories = load_cqr_evaluation_sequences(sequence_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_lower_hist = np.asarray(
@@ -53,7 +54,7 @@ def raw_quantile_conformal_prediction(hist_name: str):
 
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     print(f"Actual coverage: {np.mean(coverage):.2%}")
-    save_name = hist_name + "_raw"
+    save_name = sequence_name + "_raw"
 
     visualize_quantile_coverage(coverage, save_name)
     visualize_quantile_intervals(cnn_lower_mean, cnn_upper_mean, save_name)
@@ -63,11 +64,11 @@ def raw_quantile_conformal_prediction(hist_name: str):
 
 
 @app.command()
-def cqr_prediction(hist_name: str):
+def cqr_prediction(sequence_name: str):
     """
     Runs conformal prediction pipeline for quantile regression models.
     """
-    histories = load_histories(hist_name)
+    histories = load_cqr_evaluation_sequences(sequence_name)
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_lower_hist = np.asarray(
@@ -116,16 +117,16 @@ def cqr_prediction(hist_name: str):
     print(f"Target coverage: {config.calibration_quantile:.0%}")
     print(f"Actual coverage: {np.mean(coverage):.2%}")
 
-    visualize_quantile_coverage(coverage, hist_name)
+    visualize_quantile_coverage(coverage, sequence_name)
     visualize_quantile_intervals(
-        cnn_lower_test_adjusted, cnn_upper_test_adjusted, hist_name
+        cnn_lower_test_adjusted, cnn_upper_test_adjusted, sequence_name
     )
     visualize_quantile_gridpoints(
         cnn_lower_test_adjusted,
         cnn_upper_test_adjusted,
         truth_test,
         qpens_test,
-        hist_name,
+        sequence_name,
     )
 
 
@@ -225,7 +226,7 @@ def check_quantile_coverage(
     return np.stack(var_coverage, axis=2)
 
 
-def visualize_quantile_coverage(coverage, hist_name):
+def visualize_quantile_coverage(coverage, sequence_name):
     """
     Visualize coverage performance over time.
     """
@@ -268,13 +269,13 @@ def visualize_quantile_coverage(coverage, hist_name):
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
-    save_path = f"{viz_dir}{base_name}_quantile_coverage.png"
+    base_name = sequence_name.replace(".npz", "")
+    save_path = f"{viz_dir}/{base_name}_quantile_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile coverage visualization saved to: {save_path}")
 
 
-def visualize_quantile_intervals(lower_quantiles, upper_quantiles, hist_name):
+def visualize_quantile_intervals(lower_quantiles, upper_quantiles, sequence_name):
     """
     Visualize quantile interval widths over time.
     """
@@ -299,8 +300,8 @@ def visualize_quantile_intervals(lower_quantiles, upper_quantiles, hist_name):
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
-    save_path = f"{viz_dir}{base_name}_quantile_intervals.png"
+    base_name = sequence_name.replace(".npz", "")
+    save_path = f"{viz_dir}/{base_name}_quantile_intervals.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile interval visualization saved to: {save_path}")
 
@@ -310,16 +311,15 @@ def visualize_quantile_gridpoints(
     upper_quantiles,
     truth,
     qpens,
-    hist_name,
+    sequence_name,
     random_seed=1,
     timestep=50,
 ):
     """
     Visualize quantile intervals at specific seed and timestep.
     """
-    if random_seed >= len(truth) or timestep >= len(truth[0]):
-        print(f"Warning: Seed {random_seed} or timestep {timestep} out of range")
-        return
+    random_seed = min(random_seed, len(truth) - 1)
+    timestep = min(timestep, len(truth[0]) - 1)
 
     truth_mean = np.mean(truth[random_seed, timestep], axis=-1)
     qpens_mean = np.mean(qpens[random_seed, timestep], axis=-1)
@@ -364,9 +364,9 @@ def visualize_quantile_gridpoints(
 
     plt.tight_layout()
 
-    base_name = hist_name.replace(".npz", "")
+    base_name = sequence_name.replace(".npz", "")
     save_path = (
-        f"{viz_dir}{base_name}_quantile_gridpoints_seed{random_seed}_t{timestep}.png"
+        f"{viz_dir}/{base_name}_quantile_gridpoints_seed{random_seed}_t{timestep}.png"
     )
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Quantile gridpoint visualization saved to: {save_path}")

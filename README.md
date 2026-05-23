@@ -41,14 +41,14 @@ pip install -e .  # Install in development mode
 
 ### Running the Pipeline
 
-1. **Generate training data:**
+1. **Generate a training sequence:**
    ```bash
    python -m msw_da_ml.main generate-training-data
    ```
 
 2. **Train a CNN model:**
    ```bash
-   python -m msw_da_ml.main train-cnn-model <training_data_name>
+   python -m msw_da_ml.main train-cnn-model <training_sequence_name>
    ```
 
 3. **Run inference:**
@@ -56,14 +56,14 @@ pip install -e .  # Install in development mode
    python -m msw_da_ml.main run-inference
    ```
 
-4. **Generate experiment data for uncertainty quantification:**
+4. **Generate evaluation sequences for uncertainty quantification:**
    ```bash
    python -m msw_da_ml.main generate-conformal-prediction-data
    ```
 
 5. **Compare different uncertainty quantification methods:**
    ```bash
-   python -m msw_da_ml.main compare-cp-vs-cqr <cp_data> <cqr_data>
+   python -m msw_da_ml.main compare-uq-methods <cp_sequence> <cqr_sequence>
    ```
 
 ### Useful Commands
@@ -75,7 +75,7 @@ python -m msw_da_ml.main --help
 # List trained models
 python -m msw_da_ml.main list-available-models
 
-# List training/experiment data
+# List training/evaluation sequences
 python -m msw_da_ml.main list-available-data
 
 # Get detailed help for any command

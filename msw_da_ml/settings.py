@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 from pathlib import Path
 
@@ -91,13 +90,13 @@ class GlobalConfig(BaseModel):
     out_path: str
     visualizations_out_filename: str
     generated_data_animations_out_filename: str
-    msw_model_out_filename: str
+    training_sequences_out_filename: str
     trained_nn_model_out_filename: str
     normalization_out_filename: str
-    experiment_histories_out_filename: str
+    evaluation_sequences_out_filename: str
     trained_quantile_nn_model_out_filename: str
     quantile_normalization_out_filename: str
-    quantile_experiment_histories_out_filename: str
+    quantile_evaluation_sequences_out_filename: str
     base_seed: int
 
 

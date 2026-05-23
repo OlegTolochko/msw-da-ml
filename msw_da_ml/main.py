@@ -1,19 +1,23 @@
-from pathlib import Path
-import os
-
 import cyclopts
 
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.msw.random_manager import RandomGenerators
-from msw_da_ml.msw.msw_data_generation import DataGenerationPipeline
+from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.msw_cnn.train_nn import train_nn
+from msw_da_ml.evidential_regression.er_train_nn import train_mcdo_nn, train_nig_nn
 from msw_da_ml.conformal_quantile_regression.qr_train_nn import train_quantile_nn
-from msw_da_ml.msw_cnn.inference import inference, get_most_recent_model_name
-from msw_da_ml.conformal_prediction.cp_data_generation import (
-    generate_experiment_data as generate_cp_experiment_data,
+from msw_da_ml.msw_cnn.inference import inference
+from msw_da_ml.data.evaluation_sequences import (
+    generate_evaluation_data as generate_cp_evaluation_data,
+)
+from msw_da_ml.conformal_prediction.mcdo_data_generation import (
+    generate_mcdo_evaluation_data,
+)
+from msw_da_ml.evidential_regression.er_nig_data_generation import (
+    generate_nig_evaluation_data,
 )
 from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
-    generate_experiment_data_qr as generate_cqr_experiment_data,
+    generate_cqr_evaluation_data,
 )
 from msw_da_ml.uq_comparison_pipeline import generate_comparison_analysis
 from msw_da_ml.conformal_prediction.conformal_prediction import conformal_prediction
@@ -33,9 +37,9 @@ app = cyclopts.App(
 def generate_training_data(
     num_ensemble_members: int = 10,
     num_steps: int = 20,
-    save_name: str = "training_data",
+    save_name: str = "cnn_training_sequence",
 ):
-    """Generates Training data for CNN and CQR CNN.
+    """Generates training sequence data for CNN and CQR CNN.
 
     Parameters
     ----------
@@ -43,18 +47,18 @@ def generate_training_data(
         Number of ensemble members.
     num_steps: int
         Number of data generation steps.
-    save_time: str
-        Save name for generated data.
+    save_name: str
+        Save name for the generated sequence.
     """
-    pipeline = DataGenerationPipeline(
+    generator = TrainingSequenceGenerator(
         num_ensemble_members=num_ensemble_members, rngs=rngs
     )
-    pipeline.run(num_steps=num_steps, pipeline_state_save_name=save_name)
+    generator.run(num_steps=num_steps, sequence_save_name=save_name)
 
 
 @app.command()
 def train_cnn_model(
-    generated_training_data_name: str,
+    training_sequence_name: str,
     model_name: str = "cnn_model",
     include_timestamp_in_name: bool = True,
 ):
@@ -62,13 +66,13 @@ def train_cnn_model(
 
     Parameters
     ----------
-    generated_msw_data_name: str
-        Name of the generated training data pipeline state file.
+    training_sequence_name: str
+        Name of the generated training sequence file.
     include_timestamp_in_name: bool
         Whether to include timestamp in the model name.
     """
     train_nn(
-        generated_training_data_name=generated_training_data_name,
+        training_sequence_name=training_sequence_name,
         model_name=model_name,
         include_timestamp_in_name=include_timestamp_in_name,
     )
@@ -76,7 +80,7 @@ def train_cnn_model(
 
 @app.command()
 def train_quantile_regression_model(
-    generated_msw_data_name: str,
+    training_sequence_name: str,
     quantile_tau: float = 0.9,
     include_timestamp_in_name: bool = True,
 ):
@@ -84,14 +88,46 @@ def train_quantile_regression_model(
 
     Parameters
     ----------
-    generated_msw_data_name: str
-        Name of the generated training data pipeline state file.
+    training_sequence_name: str
+        Name of the generated training sequence file.
     quantile_tau: float
         Quantile level for training (default: 0.9).
     include_timestamp_in_name: bool
         Whether to include timestamp in the model name.
     """
-    train_quantile_nn(generated_msw_data_name, quantile_tau, include_timestamp_in_name)
+    train_quantile_nn(
+        training_sequence_name=training_sequence_name,
+        quantile_tau=quantile_tau,
+        include_timestamp_in_name=include_timestamp_in_name,
+    )
+
+
+@app.command()
+def train_mcdo_model(
+    training_sequence_name: str,
+    model_name: str = "mcdo_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
+    """Trains an MCDO CNN model on a generated training sequence."""
+    train_mcdo_nn(
+        training_sequence_name=training_sequence_name,
+        model_name=model_name,
+        include_timestamp_in_name=include_timestamp_in_name,
+    )
+
+
+@app.command()
+def train_nig_model(
+    training_sequence_name: str,
+    model_name: str = "nig_cnn_model",
+    include_timestamp_in_name: bool = True,
+):
+    """Trains a NIG evidential CNN model on a generated training sequence."""
+    train_nig_nn(
+        training_sequence_name=training_sequence_name,
+        model_name=model_name,
+        include_timestamp_in_name=include_timestamp_in_name,
+    )
 
 
 @app.command()
@@ -116,80 +152,92 @@ def run_inference(
 
 @app.command()
 def generate_conformal_prediction_data(load_model_name: str = ""):
-    """Generates experimental data for conformal prediction analysis.
+    """Generates evaluation sequence data for conformal prediction analysis.
 
     Parameters
     ----------
     load_model_name: str
         Name of the CNN model to use for experiments.
     """
-    generate_cp_experiment_data(load_model_name)
+    generate_cp_evaluation_data(load_model_name)
 
 
 @app.command()
 def generate_cqr_data(load_model_name: str = ""):
-    """Generates experimental data for conformalized quantile regression analysis.
+    """Generates evaluation sequence data for conformalized quantile regression analysis.
 
     Parameters
     ----------
     load_model_name: str
         Name of the quantile regression model to use for experiments.
     """
-    generate_cqr_experiment_data(load_model_name)
+    generate_cqr_evaluation_data(load_model_name)
 
 
 @app.command()
-def run_conformal_prediction(cp_hist_name: str, normalize: bool = False):
-    """Runs conformal prediction analysis on experimental data.
+def generate_mcdo_data(load_model_name: str = ""):
+    """Generates MCDO evaluation sequence data."""
+    generate_mcdo_evaluation_data(load_model_name)
+
+
+@app.command()
+def generate_nig_data(load_model_name: str = ""):
+    """Generates NIG evaluation sequence data."""
+    generate_nig_evaluation_data(load_model_name)
+
+
+@app.command()
+def run_conformal_prediction(evaluation_sequence_name: str, normalize: bool = False):
+    """Runs conformal prediction analysis on evaluation sequence data.
 
     Parameters
     ----------
-    cp_hist_name: str
-        Name of the conformal prediction experiment data file.
+    evaluation_sequence_name: str
+        Name of the conformal prediction evaluation sequence file.
     normalize: bool
         Whether to use normalized conformal prediction.
     """
-    conformal_prediction(cp_hist_name, normalize)
+    conformal_prediction(evaluation_sequence_name, normalize)
 
 
 @app.command()
-def run_cqr_prediction(cqr_hist_name: str):
-    """Runs conformalized quantile regression analysis on experimental data.
+def run_cqr_prediction(cqr_evaluation_sequence_name: str):
+    """Runs conformalized quantile regression analysis on evaluation sequence data.
 
     Parameters
     ----------
-    cqr_hist_name: str
-        Name of the CQR experiment data file.
+    cqr_evaluation_sequence_name: str
+        Name of the CQR evaluation sequence file.
     """
-    cqr_prediction(cqr_hist_name)
+    cqr_prediction(cqr_evaluation_sequence_name)
 
 
 @app.command()
 def compare_uq_methods(
-    cp_hist_name: str,
-    cqr_hist_name: str,
-    mcdo_hist_name: str | None = None,
-    nig_hist_name: str | None = None,
+    cp_sequence_name: str,
+    cqr_sequence_name: str,
+    mcdo_sequence_name: str | None = None,
+    nig_sequence_name: str | None = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
 ):
     """Compares conformal prediction vs conformalized quantile regression methods.
-    Requires cp and cqr data to be generated by the same config for a fair comparison.
+    Requires CP and CQR sequences to be generated by the same config for a fair comparison.
 
     Parameters
     ----------
-    cp_hist_name: str
-        Name of the conformal prediction experiment data file.
-    cqr_hist_name: str
-        Name of the CQR experiment data file.
+    cp_sequence_name: str
+        Name of the conformal prediction evaluation sequence file.
+    cqr_sequence_name: str
+        Name of the CQR evaluation sequence file.
     normalize_cp: bool
         Whether to also run normalized CP for comparison.
     """
     generate_comparison_analysis(
-        cp_hist_name,
-        cqr_hist_name,
-        mcdo_hist_name,
-        nig_hist_name,
+        cp_sequence_name,
+        cqr_sequence_name,
+        mcdo_sequence_name,
+        nig_sequence_name,
         normalize_cp,
         include_cnn_std,
     )
@@ -231,9 +279,11 @@ def list_available_models():
 
 @app.command()
 def list_available_data():
-    """Lists all available training data and experiment files."""
-    print("=== Available Training Data ===")
-    training_data_dir = get_output_dir(settings.global_config.msw_model_out_filename)
+    """Lists all available training and evaluation sequence files."""
+    print("=== Available Training Sequences ===")
+    training_data_dir = get_output_dir(
+        settings.global_config.training_sequences_out_filename
+    )
     if training_data_dir.exists():
         data_files = [
             f for f in training_data_dir.iterdir() if f.is_file() and f.suffix == ".pkl"
@@ -244,13 +294,13 @@ def list_available_data():
             ):
                 print(f"  {data_file.name}")
         else:
-            print("No training data found")
+            print("No training sequences found")
     else:
-        print("Training data directory does not exist")
+        print("Training sequence directory does not exist")
 
-    print("\n=== Available Experiment Data ===")
+    print("\n=== Available Evaluation Sequences ===")
     exp_data_dir = get_output_dir(
-        settings.global_config.experiment_histories_out_filename
+        settings.global_config.evaluation_sequences_out_filename
     )
     if exp_data_dir.exists():
         exp_files = [
@@ -262,13 +312,13 @@ def list_available_data():
             ):
                 print(f"  {exp_file.name}")
         else:
-            print("No experiment data found")
+            print("No evaluation sequences found")
     else:
-        print("Experiment data directory does not exist")
+        print("Evaluation sequence directory does not exist")
 
-    print("\n=== Available Conformal Quantile Regression Experiment Data ===")
+    print("\n=== Available CQR Evaluation Sequences ===")
     exp_data_dir = get_output_dir(
-        settings.global_config.quantile_experiment_histories_out_filename
+        settings.global_config.quantile_evaluation_sequences_out_filename
     )
     if exp_data_dir.exists():
         exp_files = [
@@ -280,9 +330,9 @@ def list_available_data():
             ):
                 print(f"  {exp_file.name}")
         else:
-            print("No experiment data found")
+            print("No CQR evaluation sequences found")
     else:
-        print("Experiment data directory does not exist")
+        print("CQR evaluation sequence directory does not exist")
 
 
 if __name__ == "__main__":

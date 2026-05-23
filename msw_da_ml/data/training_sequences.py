@@ -16,17 +16,17 @@ from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 global_config = settings.global_config
-state_path = get_output_dir(global_config.msw_model_out_filename)
+sequence_path = get_output_dir(global_config.training_sequences_out_filename)
 
 
 @dataclass
-class DataGenerationState:
+class TrainingSequence:
     models: Dict[str, Any]
     histories: Dict[str, list]
     iteration: int = 0
 
 
-class DataGenerationPipeline:
+class TrainingSequenceGenerator:
     def __init__(self, num_ensemble_members: int, rngs):
         self.num_ensemble_members = num_ensemble_members
         self.rngs = rngs
@@ -39,17 +39,17 @@ class DataGenerationPipeline:
         num_steps: int,
         generate_evolution_animations: bool = True,
         save_data: bool = True,
-        pipeline_state_save_name: str = "cnn_training_data",
+        sequence_save_name: str = "cnn_training_sequence",
         include_timestamp_in_name: bool = True,
     ):
         """
-        Generates Truth, QPEns and EnKF data history.
+        Generates Truth, QPEns and EnKF training sequences.
         This data may be used for verifying or testing different msw model configurations.
         The main utility for the generated data is as training data for the CNN.
         """
         if include_timestamp_in_name:
             timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-            pipeline_state_save_name += f"_{timestamp}"
+            sequence_save_name += f"_{timestamp}"
 
         model_truth = EnsembleModel(
             num_ensemble_members=1, random_generator=self.rngs.truth_rng
@@ -61,7 +61,7 @@ class DataGenerationPipeline:
         model_truth.initialize()
         model_ensemble.initialize()
 
-        state = DataGenerationState(
+        state = TrainingSequence(
             models={
                 "truth": model_truth,
                 "ensemble_kf": copy.deepcopy(model_ensemble),
@@ -77,49 +77,47 @@ class DataGenerationPipeline:
             state = self._assimilate_and_forecast(state)
 
         if generate_evolution_animations:
-            self._generate_animations(state, pipeline_state_save_name)
+            self._generate_animations(state, sequence_save_name)
 
         if save_data:
-            self._save_pipeline_state(
-                state, pipeline_state_name=pipeline_state_save_name
-            )
+            self._save_training_sequence(state, sequence_name=sequence_save_name)
 
         return state
 
-    def _save_pipeline_state(
-        self, state: DataGenerationState, pipeline_state_name: str
+    def _save_training_sequence(
+        self, state: TrainingSequence, sequence_name: str
     ):
-        save_path = os.path.join(state_path, pipeline_state_name)
+        save_path = os.path.join(sequence_path, sequence_name)
 
-        if not pipeline_state_name.endswith(".pkl"):
+        if not sequence_name.endswith(".pkl"):
             save_path += ".pkl"
 
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
 
         with open(save_path, "wb") as f:
             pickle.dump(state, f)
-        print(f"Pipeline state saved to: {save_path}")
+        print(f"Training sequence saved to: {save_path}")
 
     @staticmethod
-    def load_pipeline_state(pipeline_state_name: str) -> DataGenerationState:
-        load_path = os.path.join(state_path, pipeline_state_name)
+    def load_training_sequence(sequence_name: str) -> TrainingSequence:
+        load_path = os.path.join(sequence_path, sequence_name)
 
-        if not pipeline_state_name.endswith(".pkl"):
+        if not sequence_name.endswith(".pkl"):
             load_path += ".pkl"
 
         print(load_path)
         with open(load_path, "rb") as f:
             state = pickle.load(f)
-        print(f"Pipeline state loaded from: {load_path}")
+        print(f"Training sequence loaded from: {load_path}")
         return state
 
-    def _forecast_truth(self, state: DataGenerationState):
+    def _forecast_truth(self, state: TrainingSequence):
         """Step 1: Truth model step"""
         if state.iteration > 0:
             state.models["truth"].propagate()
         return state
 
-    def _generate_observations(self, state: DataGenerationState):
+    def _generate_observations(self, state: TrainingSequence):
         """Step 2: Observation generation from truth"""
         truth_state = state.models["truth"].get_state()
 
@@ -131,7 +129,7 @@ class DataGenerationPipeline:
         state.histories["observation_locations"].append(obs_data.locations)
         return state
 
-    def _assimilate_and_forecast(self, state: DataGenerationState):
+    def _assimilate_and_forecast(self, state: TrainingSequence):
         """Step 3: Assimilate and forecast ensemble models"""
         # This part may be adjusted. For propagation to the next EnKF state, we take
         # the previous QPEns state. We do this since this data is used for model training.
@@ -162,7 +160,7 @@ class DataGenerationPipeline:
         return state
 
     def _generate_animations(
-        self, state: DataGenerationState, pipeline_state_save_name: str
+        self, state: TrainingSequence, sequence_save_name: str
     ):
         """Generate output animations"""
         animations_dir = get_output_dir(
@@ -170,13 +168,13 @@ class DataGenerationPipeline:
         )
 
         kf_animation_path = os.path.join(
-            animations_dir, f"{pipeline_state_save_name}_evolution_kf.mp4"
+            animations_dir, f"{sequence_save_name}_evolution_kf.mp4"
         )
         qp_animation_path = os.path.join(
-            animations_dir, f"{pipeline_state_save_name}_evolution_qp.mp4"
+            animations_dir, f"{sequence_save_name}_evolution_qp.mp4"
         )
         truth_animation_path = os.path.join(
-            animations_dir, f"{pipeline_state_save_name}_evolution_truth.mp4"
+            animations_dir, f"{sequence_save_name}_evolution_truth.mp4"
         )
 
         animate_evolution_from_history(state.histories["kf"], kf_animation_path)

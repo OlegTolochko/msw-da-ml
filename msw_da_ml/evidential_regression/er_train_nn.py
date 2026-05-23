@@ -8,10 +8,7 @@ from cyclopts import App
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from msw_da_ml.msw.msw_data_generation import (
-    DataGenerationPipeline,
-    DataGenerationState,
-)
+from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.settings import load_settings, get_output_dir
 from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
 from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
@@ -30,25 +27,21 @@ normalization_path = get_output_dir(settings.global_config.normalization_out_fil
 
 
 @app.command()
-def load_generated_data(pipeline_state_name: str):
-    data = DataGenerationPipeline.load_pipeline_state(
-        pipeline_state_name=pipeline_state_name
-    )
+def load_generated_data(training_sequence_name: str):
+    data = TrainingSequenceGenerator.load_training_sequence(training_sequence_name)
     print(data.observation_locations.shape)
     return data
 
 
 @app.command()
 def get_train_val_loaders(
-    pipeline_state_name: str, device: str, model_name: str, normalization_path: str
+    training_sequence_name: str, device: str, model_name: str, normalization_path: str
 ):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
     """
-    data = DataGenerationPipeline.load_pipeline_state(
-        pipeline_state_name=pipeline_state_name
-    )
+    data = TrainingSequenceGenerator.load_training_sequence(training_sequence_name)
 
     kf_data = np.array(data.histories["kf"])
     qp_data = np.array(data.histories["qp"])
@@ -139,18 +132,18 @@ def get_train_val_loaders(
 
 @app.command()
 def train_mcdo_nn(
-    generated_training_data_name: str,
+    training_sequence_name: str,
     model_name: str = "mcdo_cnn_model",
     include_timestamp_in_name: bool = True,
 ):
     """
-    Trains the MCDO CNN Model based on training data given from a pipeline state.
+    Trains the MCDO CNN Model based on a generated training sequence.
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
     dropout = training_config.mcdo_dropout
     model = MCDOCNNModel(dropout=dropout)
     train(
-        generated_training_data_name,
+        training_sequence_name,
         model,
         model_name,
         include_timestamp_in_name,
@@ -160,17 +153,17 @@ def train_mcdo_nn(
 
 @app.command()
 def train_nig_nn(
-    generated_training_data_name: str,
+    training_sequence_name: str,
     model_name: str = "nig_cnn_model",
     include_timestamp_in_name: bool = True,
 ):
     """
-    Trains the NIG CNN Model based on training data given from a pipeline state.
+    Trains the NIG CNN Model based on a generated training sequence.
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
     model = NIGCNNModel()
     train(
-        generated_training_data_name,
+        training_sequence_name,
         model,
         model_name,
         include_timestamp_in_name,
@@ -179,7 +172,7 @@ def train_nig_nn(
 
 
 def train(
-    generated_training_data_name: str,
+    training_sequence_name: str,
     model: torch.nn.Module,
     model_name: str,
     include_timestamp_in_name: bool,
@@ -200,7 +193,7 @@ def train(
 
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
-        generated_training_data_name,
+        training_sequence_name,
         device,
         model_name,
         normalization_path=normalization_path,
