@@ -6,9 +6,9 @@ from cyclopts import App
 from tqdm import tqdm
 
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
-from msw_da_ml.conformal_quantile_regression.cqr_losses import pinball_loss
-from msw_da_ml.msw_cnn.train_nn import get_train_val_loaders
+from msw_da_ml.models.cqr import QuantileCNNModel
+from msw_da_ml.training.cqr_losses import pinball_loss
+from msw_da_ml.training.train_cnn import get_train_val_loaders
 
 
 app = App()

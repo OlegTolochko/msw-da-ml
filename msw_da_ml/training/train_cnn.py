@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.msw_cnn.network import CNNModel
-from msw_da_ml.msw_cnn.losses import RMSEBiasLoss
+from msw_da_ml.models.cnn import CNNModel
+from msw_da_ml.training.losses import RMSEBiasLoss
 
 
 app = App()

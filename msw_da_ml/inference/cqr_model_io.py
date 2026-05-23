@@ -3,7 +3,7 @@ import os
 import torch
 from cyclopts import App
 
-from msw_da_ml.conformal_quantile_regression.qr_network import QuantileCNNModel
+from msw_da_ml.models.cqr import QuantileCNNModel
 from msw_da_ml.settings import load_settings, get_output_dir
 
 app = App()

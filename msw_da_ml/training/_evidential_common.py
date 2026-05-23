@@ -10,9 +10,9 @@ from tqdm import tqdm
 
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.evidential_regression.mcdo_network import MCDOCNNModel
-from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
-from msw_da_ml.evidential_regression.losses import GaussianNLL, NIGLoss
+from msw_da_ml.models.mcdo import MCDOCNNModel
+from msw_da_ml.models.nig import NIGCNNModel
+from msw_da_ml.training.evidential_losses import GaussianNLL, NIGLoss
 
 
 app = App()

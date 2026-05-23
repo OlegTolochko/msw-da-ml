@@ -9,13 +9,13 @@ import os
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.conformal_prediction.mcdo_data_generation import (
+from msw_da_ml.inference.mcdo_sequence import (
     load_mcdo_evaluation_sequences,
 )
-from msw_da_ml.evidential_regression.er_nig_data_generation import (
+from msw_da_ml.inference.nig_sequence import (
     load_nig_evaluation_sequences,
 )
-from msw_da_ml.conformal_prediction.rf_training import get_rf_model_path
+from msw_da_ml.uncertainty.rf_normalizer import get_rf_model_path
 
 app = App()
 

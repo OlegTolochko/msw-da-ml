@@ -5,14 +5,14 @@ import torch
 import numpy as np
 from cyclopts import App
 
-from msw_da_ml.msw_cnn.network import CNNModel
+from msw_da_ml.models.cnn import CNNModel
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
-from msw_da_ml.msw.observation_generation import ObservationGenerator
-from msw_da_ml.msw.msw_model import EnsembleModel
-from msw_da_ml.msw.random_manager import RandomGenerators
+from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.core.observations import ObservationGenerator
+from msw_da_ml.core.msw_model import EnsembleModel
+from msw_da_ml.core.random import RandomGenerators
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
-from msw_da_ml.msw.compare_histories import ModelComparatorVisualizer
+from msw_da_ml.evaluation.plotting import ModelComparatorVisualizer
 
 app = App()
 

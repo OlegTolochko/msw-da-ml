@@ -2,59 +2,54 @@ import os
 import copy
 from typing import List, Tuple
 from dataclasses import dataclass
-from datetime import datetime
+import datetime
 
 import torch
 import numpy as np
-from cyclopts import App
 
-from msw_da_ml.msw_cnn.inference import load_trained_model
-from msw_da_ml.msw.msw_model import EnsembleModel
-from msw_da_ml.msw.assimilation import EnsembleKalmanFilter, QPEnsemble
-from msw_da_ml.msw.observation_generation import ObservationGenerator
-from msw_da_ml.msw.random_manager import RandomGenerators
+from msw_da_ml.inference.cqr_model_io import (
+    load_cqr_trained_model,
+)
+from msw_da_ml.core.msw_model import EnsembleModel
+from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
+from msw_da_ml.core.observations import ObservationGenerator
+from msw_da_ml.core.random import RandomGenerators
 from msw_da_ml.settings import load_settings, get_output_dir
-from msw_da_ml.evidential_regression.nig_network import NIGCNNModel
-
-
-app = App()
 
 settings = load_settings()
 experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_output_dir(global_config.evaluation_sequences_out_filename)
+sequences_path = get_output_dir(
+    global_config.quantile_evaluation_sequences_out_filename
+)
 
 
 @dataclass
-class NigEvaluationSequence:
+class CqrEvaluationSequence:
     truth: List[np.ndarray]
     enkf_analysis: List[np.ndarray]
     qpens_analysis: List[np.ndarray]
-    cnn_analysis_gamma: List[np.ndarray]
-    cnn_analysis_nu: List[np.ndarray]
-    cnn_analysis_alpha: List[np.ndarray]
-    cnn_analysis_beta: List[np.ndarray]
+    cnn_analysis_lower_quantiles: List[np.ndarray]
+    cnn_analysis_upper_quantiles: List[np.ndarray]
     seed: int
 
 
-class NigEvaluationSequenceGenerator:
+class CqrEvaluationSequenceGenerator:
     def __init__(self, load_model_name: str = ""):
         self.device = (
             "mps"
             if torch.backends.mps.is_available()
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        name_begins_with = "nig"
-        self.model, self.norm_stats = load_trained_model(
-            NIGCNNModel, load_model_name, name_begins_with, self.device
+        self.model, self.norm_stats = load_cqr_trained_model(
+            load_model_name, self.device
         )
-        self.model.eval()
 
     def run_single_experiment(
         self, seed: int, num_inference_steps: int
-    ) -> NigEvaluationSequence:
+    ) -> CqrEvaluationSequence:
         rngs = RandomGenerators.from_seed(seed)
 
         truth_model = EnsembleModel(
@@ -75,14 +70,12 @@ class NigEvaluationSequenceGenerator:
         qpens = QPEnsemble()
         obs_generator = ObservationGenerator(rngs)
 
-        sequence = NigEvaluationSequence(
+        sequence = CqrEvaluationSequence(
             truth=[],
             enkf_analysis=[],
             qpens_analysis=[],
-            cnn_analysis_gamma=[],
-            cnn_analysis_nu=[],
-            cnn_analysis_alpha=[],
-            cnn_analysis_beta=[],
+            cnn_analysis_lower_quantiles=[],
+            cnn_analysis_upper_quantiles=[],
             seed=seed,
         )
 
@@ -120,25 +113,20 @@ class NigEvaluationSequenceGenerator:
                 cnn_state, obs_data.observation, obs_data.locations
             )
 
-            gamma, nu, alpha, beta = self._apply_cnn_correction_nig(
-                cnn_enkf_assimilated,
-                obs_data.locations,
+            cnn_lower_quantile, cnn_upper_quantile = self._apply_cnn_correction(
+                cnn_enkf_assimilated, obs_data.locations
             )
+            cnn_corrected = 0.5 * (cnn_lower_quantile + cnn_upper_quantile)
+            cnn_model.assimilate(cnn_corrected)
 
-            cnn_model.assimilate(gamma)
-
-            sequence.cnn_analysis_gamma.append(gamma.copy())
-            sequence.cnn_analysis_nu.append(nu.copy())
-            sequence.cnn_analysis_alpha.append(alpha.copy())
-            sequence.cnn_analysis_beta.append(beta.copy())
+            sequence.cnn_analysis_lower_quantiles.append(cnn_lower_quantile.copy())
+            sequence.cnn_analysis_upper_quantiles.append(cnn_upper_quantile.copy())
 
         return sequence
 
-    def _apply_cnn_correction_nig(
-        self,
-        assimilated_state: np.ndarray,
-        observation_locations: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _apply_cnn_correction(
+        self, assimilated_state: np.ndarray, observation_locations: np.ndarray
+    ) -> np.ndarray:
         observation_locations_data = np.tile(
             np.expand_dims(observation_locations[2:3], axis=-1),
             (1, 1, assimilated_state.shape[2]),
@@ -157,22 +145,28 @@ class NigEvaluationSequenceGenerator:
         )
 
         with torch.no_grad():
-            gamma, nu, alpha, beta = self.model(normalized_tensor)
+            lower_quantile, upper_quantile = self.model(normalized_tensor)
 
-        gamma_denorm = (gamma * self.norm_stats["std_out"]) + self.norm_stats[
-            "mean_out"
-        ]
+        corrected_lower_quantile = (
+            lower_quantile * self.norm_stats["std_out"]
+        ) + self.norm_stats["mean_out"]
+        corrected_upper_quantile = (
+            upper_quantile * self.norm_stats["std_out"]
+        ) + self.norm_stats["mean_out"]
+        corrected_lower_quantile_permuted = (
+            corrected_lower_quantile.permute(1, 2, 0).cpu().numpy()
+        )
+        corrected_upper_quantile_permuted = (
+            corrected_upper_quantile.permute(1, 2, 0).cpu().numpy()
+        )
 
-        gamma_np = gamma_denorm.permute(1, 2, 0).cpu().numpy()
-        nu_np = nu.permute(1, 2, 0).cpu().numpy()
-        alpha_np = alpha.permute(1, 2, 0).cpu().numpy()
-        beta_np = beta.permute(1, 2, 0).cpu().numpy()
-
-        return gamma_np, nu_np, alpha_np, beta_np
+        return corrected_lower_quantile_permuted, corrected_upper_quantile_permuted
 
 
-def generate_nig_evaluation_sequences(load_model_name: str = "") -> List[NigEvaluationSequence]:
-    generator = NigEvaluationSequenceGenerator(load_model_name)
+def generate_cqr_evaluation_sequences(
+    load_model_name: str = "",
+) -> Tuple[List[CqrEvaluationSequence], str]:
+    generator = CqrEvaluationSequenceGenerator(load_model_name)
     sequences = []
 
     for i in range(experiment_config.num_seeds):
@@ -186,20 +180,17 @@ def generate_nig_evaluation_sequences(load_model_name: str = "") -> List[NigEval
         )
         sequences.append(sequence)
 
-    return sequences
+    return sequences, load_model_name
 
 
-def save_nig_evaluation_sequences(
-    sequences: List[NigEvaluationSequence],
-    model_name: str = "",
+def save_cqr_evaluation_sequences(
+    sequences: List[CqrEvaluationSequence],
+    loaded_model_name: str,
 ):
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    model_part = ""
-    if model_name:
-        model_part = f"_{model_name.removesuffix('.pth')}"
+    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     save_name = (
-        f"nig_evaluation_sequence{model_part}_{timestamp}"
-        f"_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
+        f"cqr_evaluation_sequence_{str.removesuffix(loaded_model_name, '.pth')}"
+        f"_{timestamp}_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
         f"_T{experiment_config.num_inference_steps}.npz"
     )
     save_path = os.path.join(sequences_path, save_name)
@@ -209,20 +200,22 @@ def save_nig_evaluation_sequences(
         save_data[f"truth_{i}"] = np.array(sequence.truth)
         save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
         save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
-        save_data[f"cnn_analysis_gamma_{i}"] = np.array(sequence.cnn_analysis_gamma)
-        save_data[f"cnn_analysis_nu_{i}"] = np.array(sequence.cnn_analysis_nu)
-        save_data[f"cnn_analysis_alpha_{i}"] = np.array(sequence.cnn_analysis_alpha)
-        save_data[f"cnn_analysis_beta_{i}"] = np.array(sequence.cnn_analysis_beta)
+        save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(
+            sequence.cnn_analysis_lower_quantiles
+        )
+        save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(
+            sequence.cnn_analysis_upper_quantiles
+        )
         save_data[f"seed_{i}"] = sequence.seed
 
     save_data["num_experiments"] = len(sequences)
 
     np.savez_compressed(save_path, **save_data)
-    print(f"NIG evaluation sequences saved to {save_path}")
+    print(f"CQR evaluation sequences saved to {save_path}")
     return save_name
 
 
-def load_nig_evaluation_sequences(load_name: str) -> List[NigEvaluationSequence]:
+def load_cqr_evaluation_sequences(load_name: str) -> List[CqrEvaluationSequence]:
     if not load_name.endswith(".npz"):
         load_name += ".npz"
 
@@ -232,14 +225,16 @@ def load_nig_evaluation_sequences(load_name: str) -> List[NigEvaluationSequence]
 
     sequences = []
     for i in range(num_experiments):
-        sequence = NigEvaluationSequence(
+        sequence = CqrEvaluationSequence(
             truth=list(data[f"truth_{i}"]),
             enkf_analysis=list(data[f"enkf_analysis_{i}"]),
             qpens_analysis=list(data[f"qpens_analysis_{i}"]),
-            cnn_analysis_gamma=list(data[f"cnn_analysis_gamma_{i}"]),
-            cnn_analysis_nu=list(data[f"cnn_analysis_nu_{i}"]),
-            cnn_analysis_alpha=list(data[f"cnn_analysis_alpha_{i}"]),
-            cnn_analysis_beta=list(data[f"cnn_analysis_beta_{i}"]),
+            cnn_analysis_lower_quantiles=list(
+                data[f"cnn_analysis_lower_quantiles_{i}"]
+            ),
+            cnn_analysis_upper_quantiles=list(
+                data[f"cnn_analysis_upper_quantiles_{i}"]
+            ),
             seed=int(data[f"seed_{i}"]),
         )
         sequences.append(sequence)
@@ -247,13 +242,13 @@ def load_nig_evaluation_sequences(load_name: str) -> List[NigEvaluationSequence]
     return sequences
 
 
-@app.command()
-def generate_nig_evaluation_data(model_name: str = ""):
-    sequences = generate_nig_evaluation_sequences(model_name)
-    save_nig_evaluation_sequences(sequences, model_name)
+def generate_cqr_evaluation_data(model_name: str = ""):
+    sequences, loaded_model_name = generate_cqr_evaluation_sequences(model_name)
+    save_name = save_cqr_evaluation_sequences(sequences, loaded_model_name)
 
-    print(f"Generated {len(sequences)} NIG evaluation sequences")
+    print(f"Generated {len(sequences)} CQR evaluation sequences")
+    return save_name
 
 
 if __name__ == "__main__":
-    app()
+    generate_cqr_evaluation_data()

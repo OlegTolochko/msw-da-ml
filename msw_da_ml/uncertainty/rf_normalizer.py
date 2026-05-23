@@ -7,7 +7,7 @@ from cyclopts import App
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
-from msw_da_ml.msw_cnn.inference import load_trained_model
+from msw_da_ml.inference.cnn_sequence import load_trained_model
 from msw_da_ml.settings import load_settings, get_output_dir
 
 app = App()

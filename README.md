@@ -13,6 +13,17 @@ The original authors code can be found at: [zenodo.org/records/4354602](https://
 
 This project implements a shallow water model (MSW) with data assimilation techniques, including Ensemble Kalman Filter (EnKF), Quadratic Programming Ensemble (QPEns), and a CNN for mass conservation corrections. It also includes uncertainty quantification via methods like Conformal Prediction.
 
+## Source Layout
+
+- `msw_da_ml/core/`: MSW model, observations, assimilation, and random seeds.
+- `msw_da_ml/data/`: training and evaluation sequence generation/loading.
+- `msw_da_ml/models/`: CNN, CQR, MCDO, and NIG network definitions.
+- `msw_da_ml/training/`: model training entry points and losses.
+- `msw_da_ml/inference/`: CNN/CQR/MCDO/NIG evaluation sequence generation.
+- `msw_da_ml/uncertainty/`: CP, normalized CP, CQR, RF normalization, and UQ comparison.
+- `msw_da_ml/evaluation/`: RMSE, coverage helpers, and plotting utilities.
+- `msw_da_ml/cli.py`: command-line entry point.
+
 ### End-to-End Pipeline
 <img width="1000" alt="full_project_pipeline" src="pipeline_visualizations/full_project_pipeline.png" />
 
@@ -43,43 +54,43 @@ pip install -e .  # Install in development mode
 
 1. **Generate a training sequence:**
    ```bash
-   python -m msw_da_ml.main generate-training-data
+   python -m msw_da_ml.cli generate-training-data
    ```
 
 2. **Train a CNN model:**
    ```bash
-   python -m msw_da_ml.main train-cnn-model <training_sequence_name>
+   python -m msw_da_ml.cli train-cnn-model <training_sequence_name>
    ```
 
 3. **Run inference:**
    ```bash
-   python -m msw_da_ml.main run-inference
+   python -m msw_da_ml.cli run-inference
    ```
 
 4. **Generate evaluation sequences for uncertainty quantification:**
    ```bash
-   python -m msw_da_ml.main generate-conformal-prediction-data
+   python -m msw_da_ml.cli generate-conformal-prediction-data
    ```
 
 5. **Compare different uncertainty quantification methods:**
    ```bash
-   python -m msw_da_ml.main compare-uq-methods <cp_sequence> <cqr_sequence>
+   python -m msw_da_ml.cli compare-uq-methods <cp_sequence> <cqr_sequence>
    ```
 
 ### Useful Commands
 
 ```bash
 # Show all available commands
-python -m msw_da_ml.main --help
+python -m msw_da_ml.cli --help
 
 # List trained models
-python -m msw_da_ml.main list-available-models
+python -m msw_da_ml.cli list-available-models
 
 # List training/evaluation sequences
-python -m msw_da_ml.main list-available-data
+python -m msw_da_ml.cli list-available-data
 
 # Get detailed help for any command
-python -m msw_da_ml.main <command> --help
+python -m msw_da_ml.cli <command> --help
 ```
 
 ## Configuration

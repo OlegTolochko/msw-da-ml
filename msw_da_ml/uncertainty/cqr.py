@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 from cyclopts import App
 import matplotlib.pyplot as plt
 
-from msw_da_ml.conformal_quantile_regression.cqr_data_generation import (
+from msw_da_ml.inference.cqr_sequence import (
     load_cqr_evaluation_sequences,
 )
 from msw_da_ml.settings import load_settings, get_output_dir
