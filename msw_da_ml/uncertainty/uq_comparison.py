@@ -56,8 +56,6 @@ def generate_comparison_analysis(
     cp_truth = np.asarray([h.truth for h in cp_histories])
     cp_qpens = np.asarray([h.qpens_analysis for h in cp_histories])
     cp_cnn = np.asarray([h.cnn_analysis for h in cp_histories])
-    if include_rf:
-        cp_cnn_background = np.asarray([h.cnn_background for h in cp_histories])
 
     # CQR data
     cqr_histories = load_cqr_evaluation_sequences(cqr_sequence_name)
@@ -83,35 +81,16 @@ def generate_comparison_analysis(
     test_size = 1 - config.calibration_split_ratio
 
     # CP splits
-    if include_rf:
-        (
-            cp_truth_calib,
-            cp_truth_test,
-            cp_qpens_calib,
-            cp_qpens_test,
-            cp_cnn_calib,
-            cp_cnn_test,
-            cp_cnn_bg_calib,
-            cp_cnn_bg_test,
-        ) = train_test_split(
-            cp_truth,
-            cp_qpens,
-            cp_cnn,
-            cp_cnn_background,
-            test_size=test_size,
-            random_state=random_state,
-        )
-    else:
-        (
-            cp_truth_calib,
-            cp_truth_test,
-            cp_qpens_calib,
-            cp_qpens_test,
-            cp_cnn_calib,
-            cp_cnn_test,
-        ) = train_test_split(
-            cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
-        )
+    (
+        cp_truth_calib,
+        cp_truth_test,
+        cp_qpens_calib,
+        cp_qpens_test,
+        cp_cnn_calib,
+        cp_cnn_test,
+    ) = train_test_split(
+        cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
+    )
 
     # CQR splits
     (
@@ -263,8 +242,8 @@ def generate_comparison_analysis(
             raise FileNotFoundError(f"RF model not found at {rf_path}.")
         rf = joblib.load(rf_path)
 
-        rf_norm_calib = get_rf_norm(cp_cnn_bg_calib, rf)
-        rf_norm_test = get_rf_norm(cp_cnn_bg_test, rf)
+        rf_norm_calib = get_rf_norm(cp_cnn_calib, rf)
+        rf_norm_test = get_rf_norm(cp_cnn_test, rf)
 
         if ens_mean:
             rf_norm_calib = np.mean(rf_norm_calib, axis=-1)

@@ -83,7 +83,7 @@ def get_train_val_loaders(
     kf_val_flat = kf_val_tensor.flatten(0, 1)
     qp_val_flat = qp_val_tensor.flatten(0, 1)
 
-    # cacluate means and standard deviations of utilized dataset
+    # calculate means and standard deviations of utilized dataset
     mean_in = torch.mean(kf_train_flat, dim=(0, 2), keepdim=True)
     std_in = torch.std(kf_train_flat, dim=(0, 2), keepdim=True)
 

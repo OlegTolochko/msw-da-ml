@@ -661,7 +661,9 @@ def rf_normalized_cp(
     """
     Runs conformal prediction using a pre-trained Random Forest for normalization.
     """
-    if not rf_name:
+    if rf_name:
+        rf_path = os.path.join(get_output_dir("models"), rf_name)
+    else:
         rf_path = get_rf_model_path()
 
     if not os.path.exists(rf_path):
@@ -673,7 +675,6 @@ def rf_normalized_cp(
     truth_hist = np.asarray([history.truth for history in histories])
     qpens_hist = np.asarray([history.qpens_analysis for history in histories])
     cnn_hist = np.asarray([history.cnn_analysis for history in histories])
-    cnn_background = np.asarray([history.cnn_background for history in histories])
 
     (
         truth_calib,
@@ -682,20 +683,16 @@ def rf_normalized_cp(
         qpens_test,
         cnn_calib,
         cnn_test,
-        cnn_bg_calib,
-        cnn_bg_test,
     ) = train_test_split(
         truth_hist,
         qpens_hist,
         cnn_hist,
-        cnn_background,
         test_size=1 - config.calibration_split_ratio,
         random_state=config.calibration_split_seed,
     )
 
-    # cnn_background as input for RF
-    norm_calib = get_rf_norm(cnn_bg_calib, rf)
-    norm_test = get_rf_norm(cnn_bg_test, rf)
+    norm_calib = get_rf_norm(cnn_calib, rf)
+    norm_test = get_rf_norm(cnn_test, rf)
 
     if ens_mean:
         norm_calib = np.mean(norm_calib, axis=-1)

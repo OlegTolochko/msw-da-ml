@@ -72,13 +72,9 @@ def train_rf(training_sequence_name: str, cnn_model_name: str):
 
     residuals = np.abs(qp_flat - cnn_preds)
 
-    # X: orig. input data (T*E*G, V) w.o. obs locations
+    # X: CNN prediction (T*E*G, V)
     # Y: abs residuals (T*E*G, V)
-    X = (
-        kf_flat[:, : qp_data.shape[1], :]
-        .transpose(0, 2, 1)
-        .reshape(-1, qp_data.shape[1])
-    )
+    X = cnn_preds.transpose(0, 2, 1).reshape(-1, residuals.shape[1])
     Y = residuals.transpose(0, 2, 1).reshape(-1, residuals.shape[1])
 
     print(f"Training RF on {X.shape[0]} samples")
