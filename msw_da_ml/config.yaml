@@ -77,13 +77,13 @@ conformal_prediction_config:
 
 global_config:
   out_path: ./out/
-  visualizations_out_filename: visualizations/
-  generated_data_animations_out_filename: training_sequence_animations/
-  training_sequences_out_filename: training_sequences/
-  trained_nn_model_out_filename: trained_nn_models/
-  normalization_out_filename: normalization_stats/
-  evaluation_sequences_out_filename: evaluation_sequences/
-  trained_quantile_nn_model_out_filename: trained_quantile_nn_models/
-  quantile_normalization_out_filename: quantile_normalization_stats/
-  quantile_evaluation_sequences_out_filename: cqr_evaluation_sequences/
+  visualizations_out_filename: figures/
+  generated_data_animations_out_filename: figures/animations/
+  training_sequences_out_filename: data/training/
+  trained_nn_model_out_filename: models/
+  normalization_out_filename: models/
+  evaluation_sequences_out_filename: data/evaluation/cnn/
+  trained_quantile_nn_model_out_filename: models/cqr/
+  quantile_normalization_out_filename: models/cqr/
+  quantile_evaluation_sequences_out_filename: data/evaluation/cqr/
   base_seed: 42 # enforces reproducibility of experiments, change for different new runs

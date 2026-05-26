@@ -8,7 +8,7 @@ import joblib
 import os
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_model_artifact_dir, get_output_dir, load_settings
 from msw_da_ml.inference.mcdo_sequence import (
     load_mcdo_evaluation_sequences,
 )
@@ -662,7 +662,7 @@ def rf_normalized_cp(
     Runs conformal prediction using a pre-trained Random Forest for normalization.
     """
     if rf_name:
-        rf_path = os.path.join(get_output_dir("models"), rf_name)
+        rf_path = os.path.join(get_model_artifact_dir("rf"), rf_name)
     else:
         rf_path = get_rf_model_path()
 

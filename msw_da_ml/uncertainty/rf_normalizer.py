@@ -8,7 +8,7 @@ from cyclopts import App
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.inference.cnn_sequence import load_trained_model
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_model_artifact_dir, load_settings
 
 app = App()
 settings = load_settings()
@@ -16,7 +16,7 @@ global_config = settings.global_config
 
 
 def get_rf_model_path():
-    model_dir = get_output_dir("models")
+    model_dir = get_model_artifact_dir("rf")
     return os.path.join(model_dir, "rf_error_model.joblib")
 
 

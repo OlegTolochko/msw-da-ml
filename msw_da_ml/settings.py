@@ -146,3 +146,37 @@ def get_output_dir(subdir: str = "") -> Path:
     base_out.mkdir(parents=True, exist_ok=True)
 
     return base_out
+
+
+def infer_model_family(name: str) -> str:
+    """Infer the artifact family from a model file/name prefix."""
+    stem = Path(name).stem.lower()
+    if stem.startswith(("cqr", "quantile")):
+        return "cqr"
+    if stem.startswith("mcdo"):
+        return "mcdo"
+    if stem.startswith("nig"):
+        return "nig"
+    if stem.startswith("rf"):
+        return "rf"
+    return "cnn"
+
+
+def get_model_artifact_dir(name_or_family: str) -> Path:
+    """Return the model artifact directory for a model family/name."""
+    family = infer_model_family(name_or_family)
+    return get_output_dir(f"models/{family}")
+
+
+def get_model_artifact_paths(model_name: str) -> tuple[Path, Path]:
+    """Return paired model and normalization-stat paths for a model name."""
+    model_path = get_model_artifact_dir(model_name) / model_name
+    if model_path.suffix != ".pth":
+        model_path = model_path.with_suffix(".pth")
+    norm_path = model_path.with_name(f"norm_{model_path.stem}.pt")
+    return model_path, norm_path
+
+
+def get_evaluation_sequence_dir(method: str) -> Path:
+    """Return the evaluation sequence directory for a method."""
+    return get_output_dir(f"data/evaluation/{method}")

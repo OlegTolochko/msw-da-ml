@@ -15,14 +15,59 @@ This project implements a shallow water model (MSW) with data assimilation techn
 
 ## Source Layout
 
-- `msw_da_ml/core/`: MSW model, observations, assimilation, and random seeds.
-- `msw_da_ml/data/`: training and evaluation sequence generation/loading.
-- `msw_da_ml/models/`: CNN, CQR, MCDO, and NIG network definitions.
-- `msw_da_ml/training/`: model training entry points and losses.
-- `msw_da_ml/inference/`: CNN/CQR/MCDO/NIG evaluation sequence generation.
-- `msw_da_ml/uncertainty/`: CP, normalized CP, CQR, RF normalization, and UQ comparison.
-- `msw_da_ml/evaluation/`: RMSE, coverage helpers, and plotting utilities.
-- `msw_da_ml/cli.py`: command-line entry point.
+The current code layout is:
+
+```text
+msw_da_ml/
+  core/
+    msw_model.py          # MSW physical model
+    assimilation.py       # EnKF and QPEns
+    observations.py       # noisy observations and radar mask generation
+    random.py             # split random generators
+
+  data/
+    training_sequences.py # QPEns/EnKF training sequence generation
+    evaluation_sequences.py # CNN/CP base evaluation sequence generation
+
+  models/
+    cnn.py                # standard CNN correction model
+    cqr.py                # quantile CNN head
+    mcdo.py               # MC dropout mean/logvar head
+    nig.py                # normal-inverse-gamma evidential head
+
+  training/
+    train_cnn.py
+    train_cqr.py
+    train_mcdo.py
+    train_nig.py
+    evidential_common.py
+    losses.py
+    cqr_losses.py
+    evidential_losses.py
+
+  inference/
+    cnn_sequence.py       # model loading and CNN inference
+    base_sequence.py      # reuse CNN base sequences for UQ methods
+    cqr_model_io.py
+    cqr_sequence.py
+    mcdo_sequence.py
+    nig_sequence.py
+
+  uncertainty/
+    split_cp.py           # split CP, normalized CP, MCDO/NIG interval helpers
+    cqr.py                # CQR calibration/evaluation
+    rf_normalizer.py      # RF normalizer
+    uq_comparison.py      # comparison plots
+
+  evaluation/
+    rmse.py
+    coverage.py
+    plotting.py
+
+  cli.py
+  settings.py
+  config.yaml
+```
 
 ### End-to-End Pipeline
 <img width="1000" alt="full_project_pipeline" src="pipeline_visualizations/full_project_pipeline.png" />
@@ -51,6 +96,7 @@ pip install -e .  # Install in development mode
 ```
 
 ### Running the Pipeline
+(or use the pretrained set of models + sequence histories directly provided in a zenodo DOI: https://zenodo.org/records/20393004)
 
 1. **Generate a training sequence:**
    ```bash

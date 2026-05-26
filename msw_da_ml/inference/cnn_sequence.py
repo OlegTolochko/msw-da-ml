@@ -6,7 +6,12 @@ import numpy as np
 from cyclopts import App
 
 from msw_da_ml.models.cnn import CNNModel
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import (
+    get_model_artifact_dir,
+    get_model_artifact_paths,
+    infer_model_family,
+    load_settings,
+)
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.msw_model import EnsembleModel
@@ -19,16 +24,12 @@ app = App()
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_nn_model_path = get_output_dir(
-    settings.global_config.trained_nn_model_out_filename
-)
-normalization_path = get_output_dir(settings.global_config.normalization_out_filename)
-
-
 def get_most_recent_model_name(name_begins_with: str):
     most_recent_model = None
     most_recent_time = 0
-    for model in os.scandir(trained_nn_model_path):
+    family = infer_model_family(name_begins_with or "cnn")
+    model_dir = get_model_artifact_dir(family)
+    for model in os.scandir(model_dir):
         if model.is_file() and model.name.endswith(".pth"):
             if name_begins_with and not model.name.startswith(name_begins_with):
                 continue
@@ -59,7 +60,7 @@ def load_trained_model(
     if not load_model_name.endswith(".pth"):
         load_model_name += ".pth"
 
-    model_load_path = os.path.join(trained_nn_model_path, load_model_name)
+    model_load_path, norm_stats_path = get_model_artifact_paths(load_model_name)
 
     model = model()
     state_dict = torch.load(model_load_path, map_location=device)
@@ -68,12 +69,6 @@ def load_trained_model(
     model.to(device)
     model.eval()
 
-    load_normalization_name = f"norm_{load_model_name.removesuffix('.pth')}"
-    norm_stats_path = os.path.join(normalization_path, f"{load_normalization_name}.pt")
-    if not os.path.exists(norm_stats_path):
-        norm_stats_path = os.path.join(
-            normalization_path, f"{load_model_name.removesuffix('.pth')}.pt"
-        )
     norm_stats = torch.load(norm_stats_path, map_location=device)
 
     return model, norm_stats

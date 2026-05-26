@@ -2,11 +2,13 @@ import os
 import copy
 from typing import List, Tuple
 from dataclasses import dataclass
-import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
 
+from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
+from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
 from msw_da_ml.inference.cqr_model_io import (
     load_cqr_trained_model,
 )
@@ -14,16 +16,14 @@ from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.random import RandomGenerators
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_evaluation_sequence_dir, load_settings
 
 settings = load_settings()
 experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_output_dir(
-    global_config.quantile_evaluation_sequences_out_filename
-)
+sequences_path = get_evaluation_sequence_dir("cqr")
 
 
 @dataclass
@@ -187,23 +187,26 @@ def save_cqr_evaluation_sequences(
     sequences: List[CqrEvaluationSequence],
     loaded_model_name: str,
 ):
-    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    model_stem = Path(loaded_model_name).stem if loaded_model_name else "latest"
+    model_id = model_stem.removeprefix("cqr_")
     save_name = (
-        f"cqr_evaluation_sequence_{str.removesuffix(loaded_model_name, '.pth')}"
-        f"_{timestamp}_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
-        f"_T{experiment_config.num_inference_steps}.npz"
+        f"eval_cqr_model-{model_id}"
+        f"_seed{experiment_config.base_seed}_S{experiment_config.num_seeds}"
+        f"_T{experiment_config.num_inference_steps}"
+        f"_E{experiment_config.num_ensemble_members}"
+        f"_G{settings.water_model_config.ngrid}.npz"
     )
     save_path = os.path.join(sequences_path, save_name)
     save_data = {}
 
     for i, sequence in enumerate(sequences):
-        save_data[f"truth_{i}"] = np.array(sequence.truth)
-        save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
-        save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
-        save_data[f"cnn_analysis_lower_quantiles_{i}"] = np.array(
+        save_data[f"truth_{i}"] = as_float32(sequence.truth)
+        save_data[f"enkf_analysis_{i}"] = as_float32(sequence.enkf_analysis)
+        save_data[f"qpens_analysis_{i}"] = as_float32(sequence.qpens_analysis)
+        save_data[f"cnn_analysis_lower_quantiles_{i}"] = as_float32(
             sequence.cnn_analysis_lower_quantiles
         )
-        save_data[f"cnn_analysis_upper_quantiles_{i}"] = np.array(
+        save_data[f"cnn_analysis_upper_quantiles_{i}"] = as_float32(
             sequence.cnn_analysis_upper_quantiles
         )
         save_data[f"seed_{i}"] = sequence.seed
@@ -240,6 +243,55 @@ def load_cqr_evaluation_sequences(load_name: str) -> List[CqrEvaluationSequence]
         sequences.append(sequence)
 
     return sequences
+
+
+def generate_cqr_evaluation_sequences_from_base(
+    base_sequence_name: str,
+    load_model_name: str = "",
+) -> Tuple[List[CqrEvaluationSequence], str]:
+    generator = CqrEvaluationSequenceGenerator(load_model_name)
+    base_sequences = load_evaluation_sequences(base_sequence_name)
+    sequences = []
+
+    for i, base_sequence in enumerate(base_sequences):
+        print(
+            f"Generating CQR predictions for base sequence {i + 1}/{len(base_sequences)} "
+            f"with seed {base_sequence.seed}"
+        )
+        sequence = CqrEvaluationSequence(
+            truth=list(base_sequence.truth),
+            enkf_analysis=list(base_sequence.enkf_analysis),
+            qpens_analysis=list(base_sequence.qpens_analysis),
+            cnn_analysis_lower_quantiles=[],
+            cnn_analysis_upper_quantiles=[],
+            seed=base_sequence.seed,
+        )
+
+        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
+            base_sequence
+        ):
+            lower_quantile, upper_quantile = generator._apply_cnn_correction(
+                cnn_enkf_analysis, observation_locations
+            )
+            sequence.cnn_analysis_lower_quantiles.append(lower_quantile.copy())
+            sequence.cnn_analysis_upper_quantiles.append(upper_quantile.copy())
+
+        sequences.append(sequence)
+
+    return sequences, load_model_name
+
+
+def generate_cqr_evaluation_data_from_base(
+    base_sequence_name: str,
+    model_name: str = "",
+) -> str:
+    sequences, loaded_model_name = generate_cqr_evaluation_sequences_from_base(
+        base_sequence_name, model_name
+    )
+    save_name = save_cqr_evaluation_sequences(sequences, loaded_model_name)
+
+    print(f"Generated {len(sequences)} CQR evaluation sequences from {base_sequence_name}")
+    return save_name
 
 
 def generate_cqr_evaluation_data(model_name: str = ""):

@@ -49,7 +49,7 @@ def generate_comparison_analysis(
     ens_mean: bool = True,
 ):
     """
-    Generate comparison plots between CP, normalized CP, CQR, and optionally MCDO methods.
+    Generate comparison plots between CP, normalized CP, CQR, and UQ baselines.
     """
     # CP data
     cp_histories = load_cp_sequences(cp_sequence_name)
@@ -66,15 +66,21 @@ def generate_comparison_analysis(
 
     if nig_sequence_name:
         nig_sequences = load_nig_evaluation_sequences(nig_sequence_name)
-        nig_qpens_hist = np.asarray([sequence.qpens_analysis for sequence in nig_sequences])
+        nig_qpens_hist = np.asarray(
+            [sequence.qpens_analysis for sequence in nig_sequences]
+        )
         nig_cnn_gamma = np.asarray(
             [sequence.cnn_analysis_gamma for sequence in nig_sequences]
         )
-        nig_cnn_nu = np.asarray([sequence.cnn_analysis_nu for sequence in nig_sequences])
+        nig_cnn_nu = np.asarray(
+            [sequence.cnn_analysis_nu for sequence in nig_sequences]
+        )
         nig_cnn_alpha = np.asarray(
             [sequence.cnn_analysis_alpha for sequence in nig_sequences]
         )
-        nig_cnn_beta = np.asarray([sequence.cnn_analysis_beta for sequence in nig_sequences])
+        nig_cnn_beta = np.asarray(
+            [sequence.cnn_analysis_beta for sequence in nig_sequences]
+        )
 
     # Split size
     random_state = config.calibration_split_seed
@@ -178,6 +184,8 @@ def generate_comparison_analysis(
         mcdo_qpens = np.asarray([h.qpens_analysis for h in mcdo_histories])
         mcdo_cnn_mean = np.asarray([h.cnn_analysis_mean for h in mcdo_histories])
         mcdo_cnn_logvar = np.asarray([h.cnn_analysis_logvar for h in mcdo_histories])
+        mcdo_cnn_mean_raw = mcdo_cnn_mean
+        mcdo_cnn_logvar_raw = mcdo_cnn_logvar
 
         if ens_mean:
             mcdo_cnn_mean = np.mean(mcdo_cnn_mean, axis=-2)
@@ -294,6 +302,9 @@ def generate_comparison_analysis(
 
     plot_coverage_comparison(coverages, methods, save_name, ens_mean=ens_mean)
     plot_interval_width_comparison(intervals, methods, save_name, ens_mean=ens_mean)
+    plot_interval_width_log_comparison(
+        intervals, methods, save_name, ens_mean=ens_mean
+    )
 
     plot_coverage_and_width_joint(
         coverages,
@@ -302,6 +313,37 @@ def generate_comparison_analysis(
         save_name,
         ens_mean=ens_mean,
     )
+
+    plot_uq_model_rmse_comparison(
+        cqr_qpens,
+        cqr_lower,
+        cqr_upper,
+        mcdo_qpens if mcdo_sequence_name else None,
+        mcdo_cnn_mean_raw if mcdo_sequence_name else None,
+        nig_qpens_hist if nig_sequence_name else None,
+        nig_cnn_gamma if nig_sequence_name else None,
+        save_name,
+    )
+
+    if mcdo_sequence_name or nig_sequence_name:
+        plot_uncertainty_decomposition(
+            mcdo_cnn_mean_raw if mcdo_sequence_name else None,
+            mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
+            nig_cnn_nu if nig_sequence_name else None,
+            nig_cnn_alpha if nig_sequence_name else None,
+            nig_cnn_beta if nig_sequence_name else None,
+            save_name,
+            log_scale=False,
+        )
+        plot_uncertainty_decomposition(
+            mcdo_cnn_mean_raw if mcdo_sequence_name else None,
+            mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
+            nig_cnn_nu if nig_sequence_name else None,
+            nig_cnn_alpha if nig_sequence_name else None,
+            nig_cnn_beta if nig_sequence_name else None,
+            save_name,
+            log_scale=True,
+        )
 
 
 def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool = True):
@@ -359,6 +401,7 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
     save_path = f"{viz_dir}/{save_name}_coverage.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage comparison saved to: {save_path}")
+    plt.close(fig)
 
 
 def plot_interval_width_comparison(
@@ -368,9 +411,7 @@ def plot_interval_width_comparison(
     Creates interval width comparison plot (3 variables x N methods).
     Handles both ens_mean=True (4D intervals) and ens_mean=False (5D intervals).
     """
-    fig, axes = plt.subplots(
-        3, len(method_names), figsize=(5 * len(method_names), 12), sharey="row"
-    )
+    fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
 
     for i, var_name in enumerate(variable_names):
@@ -403,6 +444,25 @@ def plot_interval_width_comparison(
                 label="±1 Std Dev",
             )
 
+            upper_display = widths_mean + widths_std
+            upper_finite = upper_display[np.isfinite(upper_display)]
+            if upper_finite.size:
+                robust_top = np.percentile(upper_finite, 98) * 1.15
+                raw_top = np.max(upper_finite) * 1.05
+                if robust_top > 0 and raw_top > 2.5 * robust_top:
+                    ax.set_ylim(0, robust_top)
+                    ax.text(
+                        0.02,
+                        0.92,
+                        f"axis clipped\nmax={raw_top / 1.05:.2g}",
+                        transform=ax.transAxes,
+                        fontsize=8,
+                        va="top",
+                        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+                    )
+                else:
+                    ax.set_ylim(0, raw_top)
+
             ax.set_xlabel("Timestep")
             ax.set_ylabel("Interval Width")
             ax.set_title(f"{var_name} - {method_name}")
@@ -413,6 +473,62 @@ def plot_interval_width_comparison(
     save_path = f"{viz_dir}/{save_name}_interval_width.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Interval width comparison saved to: {save_path}")
+    plt.close(fig)
+
+
+def plot_interval_width_log_comparison(
+    intervals, method_names, save_name, ens_mean: bool = True
+):
+    fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
+    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+
+    for i, var_name in enumerate(variable_names):
+        for j, ((lower, upper), method_name) in enumerate(zip(intervals, method_names)):
+            ax = axes[i, j] if len(method_names) > 1 else axes[i]
+            interval_widths = upper - lower
+
+            if interval_widths.ndim == 5:
+                widths_mean = np.mean(interval_widths[:, :, i, :, :], axis=(0, -2, -1))
+                widths_std = np.std(
+                    np.mean(interval_widths[:, :, i, :, :], axis=(-2, -1)), axis=0
+                )
+            else:
+                widths_mean = np.mean(interval_widths[:, :, i, :], axis=(0, -1))
+                widths_std = np.std(
+                    np.mean(interval_widths[:, :, i, :], axis=-1), axis=0
+                )
+
+            finite_positive = widths_mean[np.isfinite(widths_mean) & (widths_mean > 0)]
+            min_positive = (
+                np.min(finite_positive) * 0.5 if finite_positive.size else 1e-12
+            )
+            band_lower = np.maximum(widths_mean - widths_std, min_positive)
+            band_upper = np.maximum(widths_mean + widths_std, min_positive)
+            plot_mean = np.maximum(widths_mean, min_positive)
+
+            timesteps = range(len(widths_mean))
+            ax.plot(timesteps, plot_mean, "b-", linewidth=2, label="Interval Width")
+            ax.fill_between(
+                timesteps,
+                band_lower,
+                band_upper,
+                alpha=0.25,
+                color="blue",
+                label="±1 Std Dev",
+            )
+
+            ax.set_yscale("log")
+            ax.set_xlabel("Timestep")
+            ax.set_ylabel("Interval Width (log)")
+            ax.set_title(f"{var_name} - {method_name}")
+            ax.legend()
+            ax.grid(True, alpha=0.3, which="both")
+
+    plt.tight_layout()
+    save_path = f"{viz_dir}/{save_name}_interval_width_log.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"Log interval width comparison saved to: {save_path}")
+    plt.close(fig)
 
 
 def plot_coverage_and_width_joint(
@@ -529,3 +645,166 @@ def plot_coverage_and_width_joint(
     save_path = f"{viz_dir}/{save_name}_coverage_width_joint.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"Coverage+Width joint plot saved to: {save_path}")
+    plt.close(fig)
+
+
+def _ensemble_mean(values: np.ndarray) -> np.ndarray:
+    if values.ndim == 5:
+        return np.mean(values, axis=-1)
+    return values
+
+
+def _rmse_over_time(prediction: np.ndarray, target: np.ndarray) -> np.ndarray:
+    target_mean = _ensemble_mean(target)
+    error = prediction - target_mean
+    return np.sqrt(np.mean(error**2, axis=(0, -1)))
+
+
+def plot_uq_model_rmse_comparison(
+    cqr_qpens,
+    cqr_lower,
+    cqr_upper,
+    mcdo_qpens,
+    mcdo_cnn_mean,
+    nig_qpens,
+    nig_cnn_gamma,
+    save_name,
+):
+    models = []
+
+    cqr_midpoint = 0.5 * (np.mean(cqr_lower, axis=-1) + np.mean(cqr_upper, axis=-1))
+    models.append(("CQR midpoint", _rmse_over_time(cqr_midpoint, cqr_qpens)))
+
+    if mcdo_qpens is not None and mcdo_cnn_mean is not None:
+        mcdo_member_mean = np.mean(mcdo_cnn_mean, axis=-2)
+        mcdo_mean = np.mean(mcdo_member_mean, axis=-1)
+        models.append(("MCDO mean", _rmse_over_time(mcdo_mean, mcdo_qpens)))
+
+    if nig_qpens is not None and nig_cnn_gamma is not None:
+        nig_mean = np.mean(nig_cnn_gamma, axis=-1)
+        models.append(("NIG mean", _rmse_over_time(nig_mean, nig_qpens)))
+
+    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True)
+
+    for var_idx, (ax, var_name) in enumerate(zip(axes, variable_names)):
+        for model_name, rmse in models:
+            timesteps = np.arange(rmse.shape[0])
+            ax.plot(timesteps, rmse[:, var_idx], linewidth=2, label=model_name)
+        ax.set_title(var_name)
+        ax.set_xlabel("Timestep")
+        ax.set_ylabel("RMSE")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+
+    plt.tight_layout()
+    save_path = f"{viz_dir}/{save_name}_model_rmse.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"UQ model RMSE comparison saved to: {save_path}")
+    plt.close(fig)
+
+
+def _mean_uncertainty_by_time(values: np.ndarray) -> np.ndarray:
+    return np.mean(values, axis=(0, -1))
+
+
+def plot_uncertainty_decomposition(
+    mcdo_cnn_mean,
+    mcdo_cnn_logvar,
+    nig_cnn_nu,
+    nig_cnn_alpha,
+    nig_cnn_beta,
+    save_name,
+    log_scale: bool = False,
+):
+    rows = []
+
+    if mcdo_cnn_mean is not None and mcdo_cnn_logvar is not None:
+        mcdo_mean_ens = np.mean(mcdo_cnn_mean, axis=-2)
+        mcdo_vars_ens = np.mean(np.exp(mcdo_cnn_logvar), axis=-2)
+        mcdo_epistemic = np.var(mcdo_mean_ens, axis=-1)
+        mcdo_aleatoric = np.mean(mcdo_vars_ens, axis=-1)
+        rows.append(
+            (
+                "MCDO",
+                _mean_uncertainty_by_time(mcdo_aleatoric),
+                _mean_uncertainty_by_time(mcdo_epistemic),
+            )
+        )
+
+    if (
+        nig_cnn_nu is not None
+        and nig_cnn_alpha is not None
+        and nig_cnn_beta is not None
+    ):
+        nig_nu = np.mean(nig_cnn_nu, axis=-1)
+        nig_alpha = np.mean(nig_cnn_alpha, axis=-1)
+        nig_beta = np.mean(nig_cnn_beta, axis=-1)
+
+        alpha_safe = np.maximum(nig_alpha, 1.0 + 1e-6)
+        nu_safe = np.maximum(nig_nu, 1e-6)
+        nig_aleatoric = nig_beta / (alpha_safe - 1.0)
+        nig_epistemic = nig_aleatoric / nu_safe
+        rows.append(
+            (
+                "NIG",
+                _mean_uncertainty_by_time(nig_aleatoric),
+                _mean_uncertainty_by_time(nig_epistemic),
+            )
+        )
+
+    if not rows:
+        return
+
+    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+    fig, axes = plt.subplots(
+        len(rows), 3, figsize=(15, 4.5 * len(rows)), squeeze=False, sharex=True
+    )
+
+    for row_idx, (method_name, aleatoric, epistemic) in enumerate(rows):
+        for var_idx, var_name in enumerate(variable_names):
+            ax = axes[row_idx, var_idx]
+            timesteps = np.arange(aleatoric.shape[0])
+            ax.plot(timesteps, aleatoric[:, var_idx], linewidth=2, label="AU")
+            ax.plot(timesteps, epistemic[:, var_idx], linewidth=2, label="EU")
+            ax.set_title(f"{method_name} - {var_name}")
+            ax.set_xlabel("Timestep")
+            ax.set_ylabel("Variance" if not log_scale else "Variance (log)")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+            upper = np.concatenate([aleatoric[:, var_idx], epistemic[:, var_idx]])
+            upper = upper[np.isfinite(upper)]
+            if log_scale:
+                positive = upper[upper > 0]
+                if positive.size:
+                    ax.set_yscale("log")
+                    ax.set_ylim(np.min(positive) * 0.5, np.max(positive) * 1.25)
+                    ax.grid(True, alpha=0.3, which="both")
+            elif upper.size:
+                robust_top = np.percentile(upper, 98) * 1.15
+                raw_top = np.max(upper) * 1.05
+                if robust_top > 0 and raw_top > 2.5 * robust_top:
+                    ax.set_ylim(0, robust_top)
+                    ax.text(
+                        0.02,
+                        0.92,
+                        f"axis clipped\nmax={raw_top / 1.05:.2g}",
+                        transform=ax.transAxes,
+                        fontsize=8,
+                        va="top",
+                        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+                    )
+                else:
+                    ax.set_ylim(0, raw_top)
+
+    plt.tight_layout()
+    suffix = (
+        "uncertainty_decomposition_log"
+        if log_scale
+        else "uncertainty_decomposition"
+    )
+    save_path = f"{viz_dir}/{save_name}_{suffix}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"UQ uncertainty decomposition saved to: {save_path}")
+    plt.close(fig)

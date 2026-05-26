@@ -1,6 +1,11 @@
 import cyclopts
 
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import (
+    get_evaluation_sequence_dir,
+    get_model_artifact_dir,
+    get_output_dir,
+    load_settings,
+)
 from msw_da_ml.core.random import RandomGenerators
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.training.train_cnn import train_nn
@@ -13,12 +18,15 @@ from msw_da_ml.data.evaluation_sequences import (
 )
 from msw_da_ml.inference.mcdo_sequence import (
     generate_mcdo_evaluation_data,
+    generate_mcdo_evaluation_data_from_base,
 )
 from msw_da_ml.inference.nig_sequence import (
     generate_nig_evaluation_data,
+    generate_nig_evaluation_data_from_base,
 )
 from msw_da_ml.inference.cqr_sequence import (
     generate_cqr_evaluation_data,
+    generate_cqr_evaluation_data_from_base,
 )
 from msw_da_ml.uncertainty.uq_comparison import generate_comparison_analysis
 from msw_da_ml.uncertainty.split_cp import conformal_prediction
@@ -176,15 +184,33 @@ def generate_cqr_data(load_model_name: str = ""):
 
 
 @app.command()
+def generate_cqr_data_from_base(base_sequence_name: str, load_model_name: str = ""):
+    """Generates CQR predictions from a saved CNN base evaluation sequence."""
+    generate_cqr_evaluation_data_from_base(base_sequence_name, load_model_name)
+
+
+@app.command()
 def generate_mcdo_data(load_model_name: str = ""):
     """Generates MCDO evaluation sequence data."""
     generate_mcdo_evaluation_data(load_model_name)
 
 
 @app.command()
+def generate_mcdo_data_from_base(base_sequence_name: str, load_model_name: str = ""):
+    """Generates MCDO predictions from a saved CNN base evaluation sequence."""
+    generate_mcdo_evaluation_data_from_base(base_sequence_name, load_model_name)
+
+
+@app.command()
 def generate_nig_data(load_model_name: str = ""):
     """Generates NIG evaluation sequence data."""
     generate_nig_evaluation_data(load_model_name)
+
+
+@app.command()
+def generate_nig_data_from_base(base_sequence_name: str, load_model_name: str = ""):
+    """Generates NIG predictions from a saved CNN base evaluation sequence."""
+    generate_nig_evaluation_data_from_base(base_sequence_name, load_model_name)
 
 
 @app.command()
@@ -251,35 +277,20 @@ def compare_uq_methods(
 @app.command()
 def list_available_models():
     """Lists all available trained models."""
-    print("=== Available CNN Models ===")
-    cnn_model_dir = get_output_dir(settings.global_config.trained_nn_model_out_filename)
-    if cnn_model_dir.exists():
+    for method in ("cnn", "cqr", "mcdo", "nig"):
+        print(f"=== Available {method.upper()} Models ===")
+        model_dir = get_model_artifact_dir(method)
         models = [
-            f for f in cnn_model_dir.iterdir() if f.is_file() and f.suffix == ".pth"
+            f for f in model_dir.iterdir() if f.is_file() and f.suffix == ".pth"
         ]
         if models:
             for model in sorted(models, key=lambda x: x.stat().st_mtime, reverse=True):
-                print(f"  {model.name}")
+                norm_path = model.with_name(f"norm_{model.stem}.pt")
+                norm_status = " + norm" if norm_path.exists() else ""
+                print(f"  {model.name}{norm_status}")
         else:
-            print("  No CNN models found")
-    else:
-        print("  CNN model directory does not exist")
-
-    print("\n=== Available Quantile Regression Models ===")
-    qr_model_dir = get_output_dir(
-        settings.global_config.trained_quantile_nn_model_out_filename
-    )
-    if qr_model_dir.exists():
-        models = [
-            f for f in qr_model_dir.iterdir() if f.is_file() and f.suffix == ".pth"
-        ]
-        if models:
-            for model in sorted(models, key=lambda x: x.stat().st_mtime, reverse=True):
-                print(f"  {model.name}")
-        else:
-            print("No quantile regression models found")
-    else:
-        print("Quantile regression model directory does not exist")
+            print(f"  No {method.upper()} models found")
+        print()
 
 
 @app.command()
@@ -303,11 +314,9 @@ def list_available_data():
     else:
         print("Training sequence directory does not exist")
 
-    print("\n=== Available Evaluation Sequences ===")
-    exp_data_dir = get_output_dir(
-        settings.global_config.evaluation_sequences_out_filename
-    )
-    if exp_data_dir.exists():
+    for method in ("cnn", "cqr", "mcdo", "nig"):
+        print(f"\n=== Available {method.upper()} Evaluation Sequences ===")
+        exp_data_dir = get_evaluation_sequence_dir(method)
         exp_files = [
             f for f in exp_data_dir.iterdir() if f.is_file() and f.suffix == ".npz"
         ]
@@ -317,27 +326,7 @@ def list_available_data():
             ):
                 print(f"  {exp_file.name}")
         else:
-            print("No evaluation sequences found")
-    else:
-        print("Evaluation sequence directory does not exist")
-
-    print("\n=== Available CQR Evaluation Sequences ===")
-    exp_data_dir = get_output_dir(
-        settings.global_config.quantile_evaluation_sequences_out_filename
-    )
-    if exp_data_dir.exists():
-        exp_files = [
-            f for f in exp_data_dir.iterdir() if f.is_file() and f.suffix == ".npz"
-        ]
-        if exp_files:
-            for exp_file in sorted(
-                exp_files, key=lambda x: x.stat().st_mtime, reverse=True
-            ):
-                print(f"  {exp_file.name}")
-        else:
-            print("No CQR evaluation sequences found")
-    else:
-        print("CQR evaluation sequence directory does not exist")
+            print(f"No {method.upper()} evaluation sequences found")
 
 
 if __name__ == "__main__":

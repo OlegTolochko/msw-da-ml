@@ -2,7 +2,7 @@ import os
 import copy
 from typing import List
 from dataclasses import dataclass
-from datetime import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
@@ -12,14 +12,14 @@ from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.random import RandomGenerators
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_evaluation_sequence_dir, load_settings
 
 settings = load_settings()
 experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_output_dir(global_config.evaluation_sequences_out_filename)
+sequences_path = get_evaluation_sequence_dir("cnn")
 
 
 @dataclass
@@ -31,6 +31,8 @@ class EvaluationSequence:
     enkf_background: List[np.ndarray]
     qpens_background: List[np.ndarray]
     cnn_background: List[np.ndarray]
+    cnn_enkf_analysis: List[np.ndarray]
+    observation_locations: List[np.ndarray]
     seed: int
 
 
@@ -43,7 +45,7 @@ class EvaluationSequenceGenerator:
         )
         self.model, self.norm_stats = load_trained_model(
             load_model_name=load_model_name,
-            name_begins_with="model",
+            name_begins_with="cnn",
             device=self.device,
         )
 
@@ -78,6 +80,8 @@ class EvaluationSequenceGenerator:
             enkf_background=[],
             qpens_background=[],
             cnn_background=[],
+            cnn_enkf_analysis=[],
+            observation_locations=[],
             seed=seed,
         )
 
@@ -89,6 +93,7 @@ class EvaluationSequenceGenerator:
             obs_data = obs_generator.generate_observations_with_locations(
                 truth_state, experiment_config.num_ensemble_members
             )
+            sequence.observation_locations.append(obs_data.locations.copy())
 
             enkf_model.propagate()
             enkf_state = enkf_model.get_state()
@@ -117,6 +122,7 @@ class EvaluationSequenceGenerator:
             cnn_enkf_assimilated = enkf.assimilate(
                 cnn_state, obs_data.observation, obs_data.locations
             )
+            sequence.cnn_enkf_analysis.append(cnn_enkf_assimilated.copy())
 
             cnn_corrected = self._apply_cnn_correction(
                 cnn_enkf_assimilated, obs_data.locations
@@ -176,30 +182,43 @@ def generate_evaluation_sequences(load_model_name: str = "") -> List[EvaluationS
     return sequences
 
 
+def _as_float32(values: List[np.ndarray]) -> np.ndarray:
+    return np.asarray(values, dtype=np.float32)
+
+
+def _evaluation_sequence_name(method: str, model_name: str = "") -> str:
+    model_stem = Path(model_name).stem if model_name else "latest"
+    prefix = f"{method}_"
+    model_id = model_stem.removeprefix(prefix)
+    return (
+        f"eval_{method}_model-{model_id}"
+        f"_seed{experiment_config.base_seed}_S{experiment_config.num_seeds}"
+        f"_T{experiment_config.num_inference_steps}"
+        f"_E{experiment_config.num_ensemble_members}"
+        f"_G{settings.water_model_config.ngrid}.npz"
+    )
+
+
 def save_evaluation_sequences(
     sequences: List[EvaluationSequence],
     model_name: str = "",
 ) -> str:
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    model_part = ""
-    if model_name:
-        model_part = f"_{model_name.removesuffix('.pth')}"
-    save_name = (
-        f"evaluation_sequence{model_part}_{timestamp}"
-        f"_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
-        f"_T{experiment_config.num_inference_steps}.npz"
-    )
+    save_name = _evaluation_sequence_name("cnn", model_name)
     save_path = os.path.join(sequences_path, save_name)
     save_data = {}
 
     for i, sequence in enumerate(sequences):
-        save_data[f"truth_{i}"] = np.array(sequence.truth)
-        save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
-        save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
-        save_data[f"cnn_analysis_{i}"] = np.array(sequence.cnn_analysis)
-        save_data[f"enkf_background_{i}"] = np.array(sequence.enkf_background)
-        save_data[f"qpens_background_{i}"] = np.array(sequence.qpens_background)
-        save_data[f"cnn_background_{i}"] = np.array(sequence.cnn_background)
+        save_data[f"truth_{i}"] = _as_float32(sequence.truth)
+        save_data[f"enkf_analysis_{i}"] = _as_float32(sequence.enkf_analysis)
+        save_data[f"qpens_analysis_{i}"] = _as_float32(sequence.qpens_analysis)
+        save_data[f"cnn_analysis_{i}"] = _as_float32(sequence.cnn_analysis)
+        save_data[f"enkf_background_{i}"] = _as_float32(sequence.enkf_background)
+        save_data[f"qpens_background_{i}"] = _as_float32(sequence.qpens_background)
+        save_data[f"cnn_background_{i}"] = _as_float32(sequence.cnn_background)
+        save_data[f"cnn_enkf_analysis_{i}"] = _as_float32(sequence.cnn_enkf_analysis)
+        save_data[f"observation_locations_{i}"] = np.asarray(
+            sequence.observation_locations, dtype=bool
+        )
         save_data[f"seed_{i}"] = sequence.seed
 
     save_data["num_experiments"] = len(sequences)
@@ -207,6 +226,12 @@ def save_evaluation_sequences(
     np.savez_compressed(save_path, **save_data)
     print(f"Evaluation sequences saved to {save_path}")
     return save_name
+
+
+def _optional_sequence_field(data, key: str) -> list[np.ndarray]:
+    if key not in data.files:
+        return []
+    return list(data[key])
 
 
 def load_evaluation_sequences(load_name: str) -> List[EvaluationSequence]:
@@ -227,6 +252,10 @@ def load_evaluation_sequences(load_name: str) -> List[EvaluationSequence]:
             enkf_background=list(data[f"enkf_background_{i}"]),
             qpens_background=list(data[f"qpens_background_{i}"]),
             cnn_background=list(data[f"cnn_background_{i}"]),
+            cnn_enkf_analysis=_optional_sequence_field(data, f"cnn_enkf_analysis_{i}"),
+            observation_locations=_optional_sequence_field(
+                data, f"observation_locations_{i}"
+            ),
             seed=int(data[f"seed_{i}"]),
         )
         sequences.append(sequence)

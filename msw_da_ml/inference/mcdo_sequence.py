@@ -2,18 +2,20 @@ import os
 import copy
 from typing import List
 from dataclasses import dataclass
-from datetime import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
 from cyclopts import App
 
+from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
+from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
 from msw_da_ml.inference.cnn_sequence import load_trained_model
 from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.random import RandomGenerators
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_evaluation_sequence_dir, load_settings
 from msw_da_ml.models.mcdo import MCDOCNNModel
 
 
@@ -24,7 +26,7 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_output_dir(global_config.evaluation_sequences_out_filename)
+sequences_path = get_evaluation_sequence_dir("mcdo")
 
 
 @dataclass
@@ -215,27 +217,27 @@ def save_mcdo_evaluation_sequences(
     sequences: List[McdoEvaluationSequence],
     model_name: str = "",
 ):
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    model_part = ""
-    if model_name:
-        model_part = f"_{model_name.removesuffix('.pth')}"
+    model_stem = Path(model_name).stem if model_name else "latest"
+    model_id = model_stem.removeprefix("mcdo_")
     save_name = (
-        f"mcdo_evaluation_sequence{model_part}_{timestamp}"
-        f"_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
-        f"_T{experiment_config.num_inference_steps}.npz"
+        f"eval_mcdo_model-{model_id}"
+        f"_seed{experiment_config.base_seed}_S{experiment_config.num_seeds}"
+        f"_T{experiment_config.num_inference_steps}"
+        f"_E{experiment_config.num_ensemble_members}"
+        f"_G{settings.water_model_config.ngrid}.npz"
     )
     save_path = os.path.join(sequences_path, save_name)
     save_data = {}
 
     for i, sequence in enumerate(sequences):
-        save_data[f"truth_{i}"] = np.array(sequence.truth)
-        save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
-        save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
-        save_data[f"cnn_analysis_mean_{i}"] = np.array(sequence.cnn_analysis_mean)
-        save_data[f"cnn_analysis_logvar_{i}"] = np.array(sequence.cnn_analysis_logvar)
-        save_data[f"enkf_background_{i}"] = np.array(sequence.enkf_background)
-        save_data[f"qpens_background_{i}"] = np.array(sequence.qpens_background)
-        save_data[f"cnn_background_{i}"] = np.array(sequence.cnn_background)
+        save_data[f"truth_{i}"] = as_float32(sequence.truth)
+        save_data[f"enkf_analysis_{i}"] = as_float32(sequence.enkf_analysis)
+        save_data[f"qpens_analysis_{i}"] = as_float32(sequence.qpens_analysis)
+        save_data[f"cnn_analysis_mean_{i}"] = as_float32(sequence.cnn_analysis_mean)
+        save_data[f"cnn_analysis_logvar_{i}"] = as_float32(sequence.cnn_analysis_logvar)
+        save_data[f"enkf_background_{i}"] = as_float32(sequence.enkf_background)
+        save_data[f"qpens_background_{i}"] = as_float32(sequence.qpens_background)
+        save_data[f"cnn_background_{i}"] = as_float32(sequence.cnn_background)
         save_data[f"seed_{i}"] = sequence.seed
 
     save_data["num_experiments"] = len(sequences)
@@ -271,12 +273,67 @@ def load_mcdo_evaluation_sequences(load_name: str) -> List[McdoEvaluationSequenc
     return sequences
 
 
+def generate_mcdo_evaluation_sequences_from_base(
+    base_sequence_name: str,
+    load_model_name: str = "",
+) -> List[McdoEvaluationSequence]:
+    generator = McdoEvaluationSequenceGenerator(load_model_name)
+    base_sequences = load_evaluation_sequences(base_sequence_name)
+    sequences = []
+
+    for i, base_sequence in enumerate(base_sequences):
+        print(
+            f"Generating MCDO predictions for base sequence {i + 1}/{len(base_sequences)} "
+            f"with seed {base_sequence.seed}"
+        )
+        sequence = McdoEvaluationSequence(
+            truth=list(base_sequence.truth),
+            enkf_analysis=list(base_sequence.enkf_analysis),
+            qpens_analysis=list(base_sequence.qpens_analysis),
+            cnn_analysis_mean=[],
+            cnn_analysis_logvar=[],
+            enkf_background=list(base_sequence.enkf_background),
+            qpens_background=list(base_sequence.qpens_background),
+            cnn_background=list(base_sequence.cnn_background),
+            seed=base_sequence.seed,
+        )
+
+        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
+            base_sequence
+        ):
+            samples, logvars = generator._apply_cnn_correction_mcdo(
+                cnn_enkf_analysis,
+                observation_locations,
+                experiment_config.num_ensemble_members,
+            )
+            sequence.cnn_analysis_mean.append(np.stack(samples, axis=-1).copy())
+            sequence.cnn_analysis_logvar.append(np.stack(logvars, axis=-1).copy())
+
+        sequences.append(sequence)
+
+    return sequences
+
+
+def generate_mcdo_evaluation_data_from_base(
+    base_sequence_name: str,
+    model_name: str = "",
+) -> str:
+    sequences = generate_mcdo_evaluation_sequences_from_base(
+        base_sequence_name, model_name
+    )
+    save_name = save_mcdo_evaluation_sequences(sequences, model_name)
+
+    print(f"Generated {len(sequences)} MCDO evaluation sequences from {base_sequence_name}")
+    return save_name
+
+
 @app.command()
 def generate_mcdo_evaluation_data(model_name: str = ""):
     sequences = generate_mcdo_evaluation_sequences(model_name)
-    save_mcdo_evaluation_sequences(sequences, model_name)
+    save_name = save_mcdo_evaluation_sequences(sequences, model_name)
 
     print(f"Generated {len(sequences)} MCDO evaluation sequences")
+    return save_name
 
 
 if __name__ == "__main__":

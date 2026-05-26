@@ -2,18 +2,20 @@ import os
 import copy
 from typing import List, Tuple
 from dataclasses import dataclass
-from datetime import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
 from cyclopts import App
 
+from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
+from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
 from msw_da_ml.inference.cnn_sequence import load_trained_model
 from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.random import RandomGenerators
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_evaluation_sequence_dir, load_settings
 from msw_da_ml.models.nig import NIGCNNModel
 
 
@@ -24,7 +26,7 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_output_dir(global_config.evaluation_sequences_out_filename)
+sequences_path = get_evaluation_sequence_dir("nig")
 
 
 @dataclass
@@ -193,26 +195,26 @@ def save_nig_evaluation_sequences(
     sequences: List[NigEvaluationSequence],
     model_name: str = "",
 ):
-    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    model_part = ""
-    if model_name:
-        model_part = f"_{model_name.removesuffix('.pth')}"
+    model_stem = Path(model_name).stem if model_name else "latest"
+    model_id = model_stem.removeprefix("nig_")
     save_name = (
-        f"nig_evaluation_sequence{model_part}_{timestamp}"
-        f"_seed{experiment_config.base_seed}_n{experiment_config.num_seeds}"
-        f"_T{experiment_config.num_inference_steps}.npz"
+        f"eval_nig_model-{model_id}"
+        f"_seed{experiment_config.base_seed}_S{experiment_config.num_seeds}"
+        f"_T{experiment_config.num_inference_steps}"
+        f"_E{experiment_config.num_ensemble_members}"
+        f"_G{settings.water_model_config.ngrid}.npz"
     )
     save_path = os.path.join(sequences_path, save_name)
     save_data = {}
 
     for i, sequence in enumerate(sequences):
-        save_data[f"truth_{i}"] = np.array(sequence.truth)
-        save_data[f"enkf_analysis_{i}"] = np.array(sequence.enkf_analysis)
-        save_data[f"qpens_analysis_{i}"] = np.array(sequence.qpens_analysis)
-        save_data[f"cnn_analysis_gamma_{i}"] = np.array(sequence.cnn_analysis_gamma)
-        save_data[f"cnn_analysis_nu_{i}"] = np.array(sequence.cnn_analysis_nu)
-        save_data[f"cnn_analysis_alpha_{i}"] = np.array(sequence.cnn_analysis_alpha)
-        save_data[f"cnn_analysis_beta_{i}"] = np.array(sequence.cnn_analysis_beta)
+        save_data[f"truth_{i}"] = as_float32(sequence.truth)
+        save_data[f"enkf_analysis_{i}"] = as_float32(sequence.enkf_analysis)
+        save_data[f"qpens_analysis_{i}"] = as_float32(sequence.qpens_analysis)
+        save_data[f"cnn_analysis_gamma_{i}"] = as_float32(sequence.cnn_analysis_gamma)
+        save_data[f"cnn_analysis_nu_{i}"] = as_float32(sequence.cnn_analysis_nu)
+        save_data[f"cnn_analysis_alpha_{i}"] = as_float32(sequence.cnn_analysis_alpha)
+        save_data[f"cnn_analysis_beta_{i}"] = as_float32(sequence.cnn_analysis_beta)
         save_data[f"seed_{i}"] = sequence.seed
 
     save_data["num_experiments"] = len(sequences)
@@ -247,12 +249,65 @@ def load_nig_evaluation_sequences(load_name: str) -> List[NigEvaluationSequence]
     return sequences
 
 
+def generate_nig_evaluation_sequences_from_base(
+    base_sequence_name: str,
+    load_model_name: str = "",
+) -> List[NigEvaluationSequence]:
+    generator = NigEvaluationSequenceGenerator(load_model_name)
+    base_sequences = load_evaluation_sequences(base_sequence_name)
+    sequences = []
+
+    for i, base_sequence in enumerate(base_sequences):
+        print(
+            f"Generating NIG predictions for base sequence {i + 1}/{len(base_sequences)} "
+            f"with seed {base_sequence.seed}"
+        )
+        sequence = NigEvaluationSequence(
+            truth=list(base_sequence.truth),
+            enkf_analysis=list(base_sequence.enkf_analysis),
+            qpens_analysis=list(base_sequence.qpens_analysis),
+            cnn_analysis_gamma=[],
+            cnn_analysis_nu=[],
+            cnn_analysis_alpha=[],
+            cnn_analysis_beta=[],
+            seed=base_sequence.seed,
+        )
+
+        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
+            base_sequence
+        ):
+            gamma, nu, alpha, beta = generator._apply_cnn_correction_nig(
+                cnn_enkf_analysis,
+                observation_locations,
+            )
+            sequence.cnn_analysis_gamma.append(gamma.copy())
+            sequence.cnn_analysis_nu.append(nu.copy())
+            sequence.cnn_analysis_alpha.append(alpha.copy())
+            sequence.cnn_analysis_beta.append(beta.copy())
+
+        sequences.append(sequence)
+
+    return sequences
+
+
+def generate_nig_evaluation_data_from_base(
+    base_sequence_name: str,
+    model_name: str = "",
+) -> str:
+    sequences = generate_nig_evaluation_sequences_from_base(base_sequence_name, model_name)
+    save_name = save_nig_evaluation_sequences(sequences, model_name)
+
+    print(f"Generated {len(sequences)} NIG evaluation sequences from {base_sequence_name}")
+    return save_name
+
+
 @app.command()
 def generate_nig_evaluation_data(model_name: str = ""):
     sequences = generate_nig_evaluation_sequences(model_name)
-    save_nig_evaluation_sequences(sequences, model_name)
+    save_name = save_nig_evaluation_sequences(sequences, model_name)
 
     print(f"Generated {len(sequences)} NIG evaluation sequences")
+    return save_name
 
 
 if __name__ == "__main__":

@@ -4,25 +4,17 @@ import torch
 from cyclopts import App
 
 from msw_da_ml.models.cqr import QuantileCNNModel
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import get_model_artifact_dir, get_model_artifact_paths, load_settings
 
 app = App()
 
 settings = load_settings()
 inference_config = settings.inference_config
 
-trained_quantile_nn_model_path = get_output_dir(
-    settings.global_config.trained_quantile_nn_model_out_filename
-)
-quantile_normalization_path = get_output_dir(
-    settings.global_config.quantile_normalization_out_filename
-)
-
-
 def get_most_recent_cqr_model_name():
     most_recent_model = None
     most_recent_time = 0
-    for model in os.scandir(trained_quantile_nn_model_path):
+    for model in os.scandir(get_model_artifact_dir("cqr")):
         if model.is_file() and model.name.endswith(".pth"):
             mod_time = model.stat().st_mtime_ns
             if mod_time > most_recent_time:
@@ -40,7 +32,7 @@ def load_cqr_trained_model(load_model_name: str, device):
     if not load_model_name.endswith(".pth"):
         load_model_name += ".pth"
 
-    model_load_path = os.path.join(trained_quantile_nn_model_path, load_model_name)
+    model_load_path, norm_stats_path = get_model_artifact_paths(load_model_name)
 
     model = QuantileCNNModel()
     state_dict = torch.load(model_load_path, map_location=device)
@@ -49,10 +41,6 @@ def load_cqr_trained_model(load_model_name: str, device):
     model.to(device)
     model.eval()
 
-    load_normalization_name = load_model_name.removesuffix(".pth")
-    norm_stats_path = os.path.join(
-        quantile_normalization_path, f"norm_{load_normalization_name}.pt"
-    )
     norm_stats = torch.load(norm_stats_path, map_location=device)
 
     return model, norm_stats

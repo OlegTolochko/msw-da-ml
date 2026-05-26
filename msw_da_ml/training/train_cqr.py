@@ -1,11 +1,10 @@
-import os
 from datetime import datetime
 
 import torch
 from cyclopts import App
 from tqdm import tqdm
 
-from msw_da_ml.settings import load_settings, get_output_dir
+from msw_da_ml.settings import load_settings, get_model_artifact_paths
 from msw_da_ml.models.cqr import QuantileCNNModel
 from msw_da_ml.training.cqr_losses import pinball_loss
 from msw_da_ml.training.train_cnn import get_train_val_loaders
@@ -15,14 +14,6 @@ app = App()
 
 settings = load_settings()
 training_config = settings.training_config
-
-trained_quantile_nn_model_path = get_output_dir(
-    settings.global_config.trained_quantile_nn_model_out_filename
-)
-quantile_normalization_path = get_output_dir(
-    settings.global_config.quantile_normalization_out_filename
-)
-
 
 @app.command()
 def train_quantile_nn(
@@ -41,13 +32,15 @@ def train_quantile_nn(
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         model_name += f"_{timestamp}"
 
+    model_save_path, norm_stats_path = get_model_artifact_paths(model_name)
+
     model = QuantileCNNModel()
     model = model.to(device)
     train_lodar, val_loader = get_train_val_loaders(
         training_sequence_name,
         device,
         model_name,
-        normalization_path=quantile_normalization_path,
+        normalization_path=model_save_path.parent,
     )
 
     lower_quantile = 0.5 * (1 - quantile_tau)
@@ -100,11 +93,9 @@ def train_quantile_nn(
             {"Train Loss": f"{avg_loss_train:.4f}", "Val Loss": f"{avg_loss_val:.4f}"}
         )
 
-    model_name += ".pth"
-    model_save_path = os.path.join(trained_quantile_nn_model_path, model_name)
-
     torch.save(model.state_dict(), model_save_path)
     print(f"Saved the model to {model_save_path}.")
+    print(f"Saved matching normalization stats to {norm_stats_path}.")
 
 
 if __name__ == "__main__":
