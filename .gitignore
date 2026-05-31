@@ -10,4 +10,5 @@ wheels/
 .venv
 out/
 
-# other
+notes/
+zenodo_upload/

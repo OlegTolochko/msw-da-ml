@@ -16,6 +16,7 @@ from msw_da_ml.inference.nig_sequence import (
     load_nig_evaluation_sequences,
 )
 from msw_da_ml.uncertainty.rf_normalizer import get_rf_model_path
+from msw_da_ml.uncertainty.conformal_quantile import calculate_empirical_quantile
 
 app = App()
 
@@ -577,14 +578,16 @@ def calibrate(
     print(f"Mean diff h: {np.mean(cnn_truth_mean_diff[:, :, 1]):.6f}")
     print(f"Mean diff r: {np.mean(cnn_truth_mean_diff[:, :, 2]):.6f}")
 
-    # wind, water height and rain quantiles for each timestep
-    if ens_mean:
-        quantile_axes = (0, -1)
-    else:
-        quantile_axes = (0, -2, -1)
-    quantiles = np.quantile(
-        cnn_truth_mean_diff, q=config.calibration_quantile, axis=quantile_axes
-    )  # shape: (num_timesteps, 3)
+    alpha = 1.0 - config.calibration_quantile
+    quantiles = []
+    for var_idx in range(3):
+        quantiles.append(
+            calculate_empirical_quantile(
+                cnn_truth_mean_diff[:, :, var_idx, ...],
+                alpha=alpha,
+            )
+        )
+    quantiles = np.stack(quantiles, axis=-1)  # shape: (num_timesteps, 3)
 
     return quantiles
 
