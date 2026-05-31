@@ -16,7 +16,7 @@ from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
 from msw_da_ml.core.observations import ObservationGenerator
 from msw_da_ml.core.random import RandomGenerators
 from msw_da_ml.settings import get_evaluation_sequence_dir, load_settings
-from msw_da_ml.models.nig import NIGCNNModel
+from msw_da_ml.models.evidential import NIGCNNModel
 
 
 app = App()
@@ -26,7 +26,7 @@ experiment_config = settings.experiment_config
 
 global_config = settings.global_config
 
-sequences_path = get_evaluation_sequence_dir("nig")
+sequences_path = get_evaluation_sequence_dir("evidential")
 
 
 @dataclass
@@ -48,7 +48,7 @@ class NigEvaluationSequenceGenerator:
             if torch.backends.mps.is_available()
             else ("cuda" if torch.cuda.is_available() else "cpu")
         )
-        name_begins_with = "nig"
+        name_begins_with = "evidential"
         self.model, self.norm_stats = load_trained_model(
             NIGCNNModel, load_model_name, name_begins_with, self.device
         )
@@ -196,9 +196,9 @@ def save_nig_evaluation_sequences(
     model_name: str = "",
 ):
     model_stem = Path(model_name).stem if model_name else "latest"
-    model_id = model_stem.removeprefix("nig_")
+    model_id = model_stem.removeprefix("evidential_")
     save_name = (
-        f"eval_nig_model-{model_id}"
+        f"eval_evidential_model-{model_id}"
         f"_seed{experiment_config.base_seed}_S{experiment_config.num_seeds}"
         f"_T{experiment_config.num_inference_steps}"
         f"_E{experiment_config.num_ensemble_members}"
@@ -220,7 +220,7 @@ def save_nig_evaluation_sequences(
     save_data["num_experiments"] = len(sequences)
 
     np.savez_compressed(save_path, **save_data)
-    print(f"NIG evaluation sequences saved to {save_path}")
+    print(f"Evidential evaluation sequences saved to {save_path}")
     return save_name
 
 
@@ -259,7 +259,7 @@ def generate_nig_evaluation_sequences_from_base(
 
     for i, base_sequence in enumerate(base_sequences):
         print(
-            f"Generating NIG predictions for base sequence {i + 1}/{len(base_sequences)} "
+            f"Generating evidential predictions for base sequence {i + 1}/{len(base_sequences)} "
             f"with seed {base_sequence.seed}"
         )
         sequence = NigEvaluationSequence(
@@ -297,7 +297,10 @@ def generate_nig_evaluation_data_from_base(
     sequences = generate_nig_evaluation_sequences_from_base(base_sequence_name, model_name)
     save_name = save_nig_evaluation_sequences(sequences, model_name)
 
-    print(f"Generated {len(sequences)} NIG evaluation sequences from {base_sequence_name}")
+    print(
+        f"Generated {len(sequences)} evidential evaluation sequences "
+        f"from {base_sequence_name}"
+    )
     return save_name
 
 
@@ -306,7 +309,7 @@ def generate_nig_evaluation_data(model_name: str = ""):
     sequences = generate_nig_evaluation_sequences(model_name)
     save_name = save_nig_evaluation_sequences(sequences, model_name)
 
-    print(f"Generated {len(sequences)} NIG evaluation sequences")
+    print(f"Generated {len(sequences)} evidential evaluation sequences")
     return save_name
 
 

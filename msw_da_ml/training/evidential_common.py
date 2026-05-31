@@ -11,7 +11,7 @@ from tqdm import tqdm
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.settings import load_settings, get_model_artifact_paths
 from msw_da_ml.models.mcdo import MCDOCNNModel
-from msw_da_ml.models.nig import NIGCNNModel
+from msw_da_ml.models.evidential import NIGCNNModel
 from msw_da_ml.training.evidential_losses import GaussianNLL, NIGLoss
 
 
@@ -146,9 +146,10 @@ def train_mcdo_nn(
 
 
 @app.command()
-def train_nig_nn(
+def train_evidential_nn(
     training_sequence_name: str,
-    model_name: str = "nig_cnn_model",
+    model_name: str = "evidential_cnn_model",
+    reg_coef: float = 1.0,
     include_timestamp_in_name: bool = True,
 ):
     """
@@ -162,6 +163,7 @@ def train_nig_nn(
         model_name,
         include_timestamp_in_name,
         warmup=False,
+        nig_reg_coef=reg_coef,
     )
 
 
@@ -171,6 +173,7 @@ def train(
     model_name: str,
     include_timestamp_in_name: bool,
     warmup: bool,
+    nig_reg_coef: float = 1.0,
 ):
     """
     Base Training method
@@ -196,7 +199,7 @@ def train(
     )
 
     nll_criterion = GaussianNLL()
-    nig_criterion = NIGLoss()
+    nig_criterion = NIGLoss(reg_coef=nig_reg_coef)
     if warmup:
         mse_criterion = torch.nn.MSELoss()
         warmup_epochs = 20

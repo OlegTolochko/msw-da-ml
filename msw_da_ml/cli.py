@@ -10,7 +10,7 @@ from msw_da_ml.core.random import RandomGenerators
 from msw_da_ml.data.training_sequences import TrainingSequenceGenerator
 from msw_da_ml.training.train_cnn import train_nn
 from msw_da_ml.training.train_mcdo import train_mcdo_nn
-from msw_da_ml.training.train_nig import train_nig_nn
+from msw_da_ml.training.train_evidential import train_evidential_nn
 from msw_da_ml.training.train_cqr import train_quantile_nn
 from msw_da_ml.inference.cnn_sequence import inference
 from msw_da_ml.data.evaluation_sequences import (
@@ -20,7 +20,7 @@ from msw_da_ml.inference.mcdo_sequence import (
     generate_mcdo_evaluation_data,
     generate_mcdo_evaluation_data_from_base,
 )
-from msw_da_ml.inference.nig_sequence import (
+from msw_da_ml.inference.evidential_sequence import (
     generate_nig_evaluation_data,
     generate_nig_evaluation_data_from_base,
 )
@@ -126,15 +126,17 @@ def train_mcdo_model(
 
 
 @app.command()
-def train_nig_model(
+def train_evidential_model(
     training_sequence_name: str,
-    model_name: str = "nig_cnn_model",
+    model_name: str = "evidential_cnn_model",
+    reg_coef: float = 1.0,
     include_timestamp_in_name: bool = True,
 ):
-    """Trains a NIG evidential CNN model on a generated training sequence."""
-    train_nig_nn(
+    """Trains an evidential NIG CNN model on a generated training sequence."""
+    train_evidential_nn(
         training_sequence_name=training_sequence_name,
         model_name=model_name,
+        reg_coef=reg_coef,
         include_timestamp_in_name=include_timestamp_in_name,
     )
 
@@ -202,14 +204,16 @@ def generate_mcdo_data_from_base(base_sequence_name: str, load_model_name: str =
 
 
 @app.command()
-def generate_nig_data(load_model_name: str = ""):
-    """Generates NIG evaluation sequence data."""
+def generate_evidential_data(load_model_name: str = ""):
+    """Generates evidential evaluation sequence data."""
     generate_nig_evaluation_data(load_model_name)
 
 
 @app.command()
-def generate_nig_data_from_base(base_sequence_name: str, load_model_name: str = ""):
-    """Generates NIG predictions from a saved CNN base evaluation sequence."""
+def generate_evidential_data_from_base(
+    base_sequence_name: str, load_model_name: str = ""
+):
+    """Generates evidential predictions from a saved CNN base evaluation sequence."""
     generate_nig_evaluation_data_from_base(base_sequence_name, load_model_name)
 
 
@@ -244,7 +248,7 @@ def compare_uq_methods(
     cp_sequence_name: str,
     cqr_sequence_name: str,
     mcdo_sequence_name: str | None = None,
-    nig_sequence_name: str | None = None,
+    evidential_sequence_name: str | None = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
     include_rf: bool = False,
@@ -266,7 +270,7 @@ def compare_uq_methods(
         cp_sequence_name=cp_sequence_name,
         cqr_sequence_name=cqr_sequence_name,
         mcdo_sequence_name=mcdo_sequence_name or "",
-        nig_sequence_name=nig_sequence_name or "",
+        nig_sequence_name=evidential_sequence_name or "",
         normalize_cp=normalize_cp,
         include_cnn_std=include_cnn_std,
         include_rf=include_rf,
@@ -277,7 +281,7 @@ def compare_uq_methods(
 @app.command()
 def list_available_models():
     """Lists all available trained models."""
-    for method in ("cnn", "cqr", "mcdo", "nig"):
+    for method in ("cnn", "cqr", "mcdo", "evidential"):
         print(f"=== Available {method.upper()} Models ===")
         model_dir = get_model_artifact_dir(method)
         models = [
@@ -314,7 +318,7 @@ def list_available_data():
     else:
         print("Training sequence directory does not exist")
 
-    for method in ("cnn", "cqr", "mcdo", "nig"):
+    for method in ("cnn", "cqr", "mcdo", "evidential"):
         print(f"\n=== Available {method.upper()} Evaluation Sequences ===")
         exp_data_dir = get_evaluation_sequence_dir(method)
         exp_files = [

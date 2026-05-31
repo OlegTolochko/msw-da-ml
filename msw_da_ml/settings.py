@@ -155,8 +155,8 @@ def infer_model_family(name: str) -> str:
         return "cqr"
     if stem.startswith("mcdo"):
         return "mcdo"
-    if stem.startswith("nig"):
-        return "nig"
+    if stem.startswith("evidential"):
+        return "evidential"
     if stem.startswith("rf"):
         return "rf"
     return "cnn"

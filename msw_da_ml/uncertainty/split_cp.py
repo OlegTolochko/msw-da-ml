@@ -12,7 +12,7 @@ from msw_da_ml.settings import get_model_artifact_dir, get_output_dir, load_sett
 from msw_da_ml.inference.mcdo_sequence import (
     load_mcdo_evaluation_sequences,
 )
-from msw_da_ml.inference.nig_sequence import (
+from msw_da_ml.inference.evidential_sequence import (
     load_nig_evaluation_sequences,
 )
 from msw_da_ml.uncertainty.rf_normalizer import get_rf_model_path
@@ -526,14 +526,14 @@ def nig_std(nig_sequence_name: str, ens_mean: bool = False, max_std_clip: float 
     mean_coverage = np.mean(coverage)
     print(f"\nMean Coverage: {mean_coverage:.4f}")
 
-    visualize_coverage(coverage, nig_sequence_name + "_nig_std")
+    visualize_coverage(coverage, nig_sequence_name + "_evidential_std")
     visualize_coverage_gridpoints(
         upper_intervals,
         lower_intervals,
         truth_hist,
         qpens_hist,
         cnn_gamma,
-        nig_sequence_name + "_nig_std",
+        nig_sequence_name + "_evidential_std",
         cnn_std=total_std,
     )
 

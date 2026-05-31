@@ -33,13 +33,13 @@ msw_da_ml/
     cnn.py                # standard CNN correction model
     cqr.py                # quantile CNN head
     mcdo.py               # MC dropout mean/logvar head
-    nig.py                # normal-inverse-gamma evidential head
+    evidential.py         # normal-inverse-gamma evidential head
 
   training/
     train_cnn.py
     train_cqr.py
     train_mcdo.py
-    train_nig.py
+    train_evidential.py
     evidential_common.py
     losses.py
     cqr_losses.py
@@ -51,7 +51,7 @@ msw_da_ml/
     cqr_model_io.py
     cqr_sequence.py
     mcdo_sequence.py
-    nig_sequence.py
+    evidential_sequence.py
 
   uncertainty/
     split_cp.py           # split CP, normalized CP, MCDO/NIG interval helpers

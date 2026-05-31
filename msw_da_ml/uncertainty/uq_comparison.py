@@ -27,7 +27,7 @@ from msw_da_ml.uncertainty.cqr import (
     apply_symmetric_quantile_adjustments,
     check_quantile_coverage,
 )
-from msw_da_ml.inference.nig_sequence import (
+from msw_da_ml.inference.evidential_sequence import (
     load_nig_evaluation_sequences,
 )
 from msw_da_ml.settings import load_settings, get_output_dir
@@ -209,7 +209,7 @@ def generate_comparison_analysis(
             mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=ens_mean
         )
 
-    # Run NIG STD
+    # Run evidential STD
     if nig_sequence_name:
         if ens_mean:
             nig_cnn_gamma_mean = np.mean(nig_cnn_gamma, axis=-1)
@@ -288,7 +288,7 @@ def generate_comparison_analysis(
         intervals.append((mcdo_lower, mcdo_upper))
 
     if nig_sequence_name:
-        methods.append("NIG STD")
+        methods.append("Evidential STD")
         coverages.append(nig_coverage)
         intervals.append((nig_lower, nig_upper))
 
@@ -682,7 +682,7 @@ def plot_uq_model_rmse_comparison(
 
     if nig_qpens is not None and nig_cnn_gamma is not None:
         nig_mean = np.mean(nig_cnn_gamma, axis=-1)
-        models.append(("NIG mean", _rmse_over_time(nig_mean, nig_qpens)))
+        models.append(("Evidential mean", _rmse_over_time(nig_mean, nig_qpens)))
 
     variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True)
@@ -747,7 +747,7 @@ def plot_uncertainty_decomposition(
         nig_epistemic = nig_aleatoric / nu_safe
         rows.append(
             (
-                "NIG",
+                "Evidential",
                 _mean_uncertainty_by_time(nig_aleatoric),
                 _mean_uncertainty_by_time(nig_epistemic),
             )
