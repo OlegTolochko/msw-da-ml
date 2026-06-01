@@ -15,14 +15,18 @@ class ObservationData:
 
 class ObservationGenerator:
     def __init__(self, rngs):
-        self.obs_random_generator = rngs.obs_rng
+        self.obs_truth_random_generator = rngs.obs_truth_rng
+        self.obs_ensemble_random_generator = rngs.obs_ensemble_rng
         self.radar_random_generator = rngs.radar_rng
 
     def generate_observations_with_locations(
         self, truth_state: np.ndarray, num_ensemble_members: int
     ) -> ObservationData:
         observation = generate_observation(
-            truth_state, num_ensemble_members, self.obs_random_generator
+            truth_state,
+            num_ensemble_members,
+            self.obs_truth_random_generator,
+            self.obs_ensemble_random_generator,
         )
         locations = generate_radar_masks(truth_state, self.radar_random_generator)
         return ObservationData(observation, locations)
@@ -31,7 +35,8 @@ class ObservationGenerator:
 def generate_observation(
     truth_state: np.ndarray,
     num_ensemble_members: int,
-    random_generator: np.random.Generator,
+    truth_random_generator: np.random.Generator,
+    ensemble_random_generator: np.random.Generator,
 ):
     """
     Generates an ensemble of observations from a passed state.
@@ -40,17 +45,17 @@ def generate_observation(
     ensemble_shape = (num_ensemble_members, num_grid_points)
     truth_perturb_shape = num_grid_points
 
-    u_error_truth = random_generator.normal(
+    u_error_truth = truth_random_generator.normal(
         loc=obs_config.u_error_mean,
         scale=obs_config.u_error_std,
         size=truth_perturb_shape,
     )
-    h_error_truth = random_generator.normal(
+    h_error_truth = truth_random_generator.normal(
         loc=obs_config.h_error_mean,
         scale=obs_config.h_error_std,
         size=truth_perturb_shape,
     )
-    r_error_truth = random_generator.lognormal(
+    r_error_truth = truth_random_generator.lognormal(
         mean=obs_config.r_error_mean,
         sigma=obs_config.r_error_std,
         size=truth_perturb_shape,
@@ -58,17 +63,17 @@ def generate_observation(
     error_truth = np.stack([u_error_truth, h_error_truth, r_error_truth])[..., None]
     truth_perturb = truth_state + error_truth
 
-    u_error = random_generator.normal(
+    u_error = ensemble_random_generator.normal(
         loc=obs_config.u_error_mean,
         scale=obs_config.u_error_std,
         size=ensemble_shape,
     )
-    h_error = random_generator.normal(
+    h_error = ensemble_random_generator.normal(
         loc=obs_config.h_error_mean,
         scale=obs_config.h_error_std,
         size=ensemble_shape,
     )
-    r_error = random_generator.lognormal(
+    r_error = ensemble_random_generator.lognormal(
         mean=obs_config.r_error_mean,
         sigma=obs_config.r_error_std,
         size=ensemble_shape,
@@ -98,19 +103,18 @@ def generate_radar_masks(
 
     is_raining = state_truth[2, :, 0] > obs_config.radar_rain_threshold
 
-    clear_sky_observations = random_generator.choice(
-        a=[True, False],
-        size=num_grid_points,
-        p=[
-            obs_config.radar_no_rain_observation_percentage,
-            1 - obs_config.radar_no_rain_observation_percentage,
-        ],
-    )
-
     u_mask[is_raining] = 0
     h_mask[is_raining] = 0
     r_mask[is_raining] = 0
 
-    u_mask[clear_sky_observations] = 0
+    clear_sky_indices = np.flatnonzero(~is_raining)
+    n_wind = int(
+        obs_config.radar_no_rain_observation_percentage * len(clear_sky_indices)
+    )
+    if n_wind:
+        wind_indices = random_generator.choice(
+            clear_sky_indices, size=n_wind, replace=False
+        )
+        u_mask[wind_indices] = 0
 
     return np.stack([u_mask, h_mask, r_mask]) == 0

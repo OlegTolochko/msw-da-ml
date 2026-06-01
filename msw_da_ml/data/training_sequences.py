@@ -72,9 +72,9 @@ class TrainingSequenceGenerator:
 
         for i in tqdm.tqdm(range(num_steps), desc="Pipeline Progress"):
             state.iteration = i
-            state = self._forecast_truth(state)
+            state = self._forecast_backgrounds(state)
             state = self._generate_observations(state)
-            state = self._assimilate_and_forecast(state)
+            state = self._assimilate(state)
 
         if generate_evolution_animations:
             self._generate_animations(state, sequence_save_name)
@@ -111,10 +111,10 @@ class TrainingSequenceGenerator:
         print(f"Training sequence loaded from: {load_path}")
         return state
 
-    def _forecast_truth(self, state: TrainingSequence):
-        """Step 1: Truth model step"""
-        if state.iteration > 0:
-            state.models["truth"].propagate()
+    def _forecast_backgrounds(self, state: TrainingSequence):
+        """Step 1: Forecast truth and the QPEns-cycled background."""
+        state.models["truth"].propagate()
+        state.models["ensemble_qp"].propagate()
         return state
 
     def _generate_observations(self, state: TrainingSequence):
@@ -129,8 +129,8 @@ class TrainingSequenceGenerator:
         state.histories["observation_locations"].append(obs_data.locations)
         return state
 
-    def _assimilate_and_forecast(self, state: TrainingSequence):
-        """Step 3: Assimilate and forecast ensemble models"""
+    def _assimilate(self, state: TrainingSequence):
+        """Step 3: Assimilate ensemble models"""
         # This part may be adjusted. For propagation to the next EnKF state, we take
         # the previous QPEns state. We do this since this data is used for model training.
         # In each CNN adjustment we assume that the previous state is a QPEns adjusted state,
@@ -153,9 +153,7 @@ class TrainingSequenceGenerator:
         state.histories["qp"].append(qp_assimilated)
 
         state.models["ensemble_kf"].assimilate(kf_assimilated)
-        state.models["ensemble_kf"].propagate()
         state.models["ensemble_qp"].assimilate(qp_assimilated)
-        state.models["ensemble_qp"].propagate()
 
         return state
 

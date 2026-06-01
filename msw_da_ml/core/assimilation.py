@@ -71,7 +71,7 @@ class BaseAssimilation(ABC):
         u_var = np.tile(assimilation_config.u_error_std**2, num_grid_points)
         h_var = np.tile(assimilation_config.h_error_std**2, num_grid_points)
         r_var = np.tile(
-            np.exp(assimilation_config.r_error_std**2)
+            (np.exp(assimilation_config.r_error_std**2) - 1)
             * np.exp(
                 2 * assimilation_config.r_error_mean
                 + assimilation_config.r_error_std**2

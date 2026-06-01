@@ -34,8 +34,9 @@ class EnsembleModel:
         r = r + self.config.base_rain
         self.state = np.array([u, h, r])
 
+        wind_perturbations = self._generate_wind_perturbation_sequence()
         for step in range(num_init_steps):
-            self.propagate()
+            self.propagate(wind_perturbations=wind_perturbations)
 
         self.history.clear()
         self.history.append(self.state.copy())
@@ -52,28 +53,37 @@ class EnsembleModel:
         else:
             raise ValueError("The current class instance has no history to correct.")
 
-    def propagate(self):
+    def propagate(self, wind_perturbations: np.ndarray | None = None):
         """Propagates the model state forward by nsub_steps"""
-        past = self.state.copy()
-        present = self.state.copy()
+        if wind_perturbations is None:
+            wind_perturbations = self._generate_wind_perturbation_sequence()
 
-        for step in range(self.config.num_sub_steps):
-            wind_perturbation = self._generate_wind_perturbation()
-            past, present, unfiltered_future = self.physics_engine.step(
-                past, present, wind_perturbation
+        past = self.physics_engine.add_ghost_cells(self.state)
+        present = self.physics_engine.add_ghost_cells(self.state)
+        for wind_perturbation in wind_perturbations:
+            past, present, future = self.physics_engine.step(
+                past, present, wind_perturbation, has_ghost_cells=True
             )
 
-        # Final state is the unfiltered future
-        self.state = unfiltered_future
+        self.state = future[:, 1:-1]
         self.history.append(self.state.copy())
         return self.state
+
+    def _generate_wind_perturbation_sequence(self):
+        return np.stack(
+            [
+                self._generate_wind_perturbation()
+                for _ in range(self.config.num_sub_steps)
+            ],
+            axis=0,
+        )
 
     def _generate_wind_perturbation(self):
         """generate random wind perturbation"""
         wind_perturbation = np.zeros((2 * self.config.ngrid, self.num_ensemble_members))
         gaussian_noise = self.gaussian_wind_perturbation
         for i in range(self.num_ensemble_members):
-            pos = self.random_generator.integers(0, self.config.ngrid - 1)
+            pos = self.random_generator.integers(0, self.config.ngrid)
             wind_perturbation[pos : pos + self.config.ngrid, i] = (
                 wind_perturbation[pos : pos + self.config.ngrid, i] + gaussian_noise
             )
@@ -121,6 +131,7 @@ class ShallowWaterPhysics:
         state_past: np.ndarray,
         state_present: np.ndarray,
         wind_perturbation: np.ndarray,
+        has_ghost_cells: bool = False,
     ):
         """
         Applies a single state evolution update step using the leapfrog method.
@@ -137,9 +148,9 @@ class ShallowWaterPhysics:
             past, present and future states,
             Shape: (3, num_grid_cells, num_ensemble_members)
         """
-        # Add ghost cells
-        state_past = self.add_ghost_cells(state_past)
-        state_present = self.add_ghost_cells(state_present)
+        if not has_ghost_cells:
+            state_past = self.add_ghost_cells(state_past)
+            state_present = self.add_ghost_cells(state_present)
 
         # Update ghost cells
         state_future = np.zeros_like(state_present)
@@ -230,6 +241,8 @@ class ShallowWaterPhysics:
         state_future[0, 1 : self.config.ngrid + 1] = u_future
         state_future[1, 1 : self.config.ngrid + 1] = h_future
         state_future[2, 1 : self.config.ngrid + 1] = r_future
+        state_future[:, 0] = state_future[:, self.config.ngrid]
+        state_future[:, self.config.ngrid + 1] = state_future[:, 1]
 
         # rain is not allowed to be 0
         state_future[2] = np.where(state_future[2] < 0.0, 0.0, state_future[2])
@@ -248,11 +261,10 @@ class ShallowWaterPhysics:
             state_future + self.config.filter_correction_present * second_derivative
         )
 
-        return (
-            next_state_past[:, 1:-1],
-            next_state_present[:, 1:-1],
-            state_future[:, 1:-1],
-        )
+        if has_ghost_cells:
+            return next_state_past, next_state_present, state_future
+
+        return next_state_past[:, 1:-1], next_state_present[:, 1:-1], state_future[:, 1:-1]
 
     def add_ghost_cells(self, state):
         state_ghost = np.zeros((3, self.config.ngrid + 2, self.num_ensemble_members))

@@ -28,34 +28,42 @@ def load_generated_data(training_sequence_name: str):
 
 @app.command()
 def get_train_val_loaders(
-    training_sequence_name: str, device: str, model_name: str, normalization_path: str
+    training_sequence_name: str,
+    device: str,
+    model_name: str,
+    normalization_path: str,
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
 ):
     """
     Returns train_loader and val_loader with Tensors of shape:
         (batch_size, num_tracked_variables, num_grid_cells)
     """
-    data = TrainingSequenceGenerator.load_training_sequence(training_sequence_name)
+    if skip_initial_cycles is None:
+        skip_initial_cycles = training_config.spinup_cycles
 
-    kf_data = np.array(data.histories["kf"])
-    qp_data = np.array(data.histories["qp"])
-
-    num_ensemble_members = kf_data[0].shape[2]
-    observation_locations_data = np.array(data.histories["observation_locations"])
-    # reshape observation locations data to only have rain locations and same shape as kf_data
-    observation_locations_data = np.tile(
-        np.expand_dims(observation_locations_data[:, 2:3], axis=-1),
-        (1, 1, 1, num_ensemble_members),
+    train_data = TrainingSequenceGenerator.load_training_sequence(
+        training_sequence_name
     )
-    kf_data_with_observation_locations = np.concat(
-        [kf_data, observation_locations_data], axis=1
+    kf_train_all, qp_train_all = _sequence_to_supervised_arrays(
+        train_data, skip_initial_cycles=skip_initial_cycles
     )
 
-    kf_train, kf_val, qp_train, qp_val = train_test_split(
-        kf_data_with_observation_locations,
-        qp_data,
-        test_size=training_config.val_split_size,
-        random_state=training_config.random_state_train_test_split,
-    )
+    if validation_sequence_name:
+        validation_data = TrainingSequenceGenerator.load_training_sequence(
+            validation_sequence_name
+        )
+        kf_train, qp_train = kf_train_all, qp_train_all
+        kf_val, qp_val = _sequence_to_supervised_arrays(
+            validation_data, skip_initial_cycles=skip_initial_cycles
+        )
+    else:
+        kf_train, kf_val, qp_train, qp_val = train_test_split(
+            kf_train_all,
+            qp_train_all,
+            test_size=training_config.val_split_size,
+            random_state=training_config.random_state_train_test_split,
+        )
 
     kf_train_tensor = torch.tensor(
         kf_train, dtype=torch.float32, device=device
@@ -76,14 +84,8 @@ def get_train_val_loaders(
     kf_val_flat = kf_val_tensor.flatten(0, 1)
     qp_val_flat = qp_val_tensor.flatten(0, 1)
 
-    # cacluate means and standard deviations of utilized dataset
-    mean_in = torch.mean(kf_train_flat, dim=(0, 2), keepdim=True)
-    std_in = torch.std(kf_train_flat, dim=(0, 2), keepdim=True)
-
-    mean_out = torch.mean(qp_train_flat, dim=(0, 2), keepdim=True)
-    std_out = torch.std(qp_train_flat, dim=(0, 2), keepdim=True)
-
     eps = 1e-8
+    mean_in, std_in, mean_out, std_out = _paper_normalization_stats(kf_train_flat, eps)
     std_in[std_in < eps] = 1.0
     std_out[std_out < eps] = 1.0
 
@@ -117,16 +119,67 @@ def get_train_val_loaders(
     )
 
     print(
-        f"Initialized train-val loaders, with: {len(kf_train)} pairs "
-        + f"in the training set and {len(kf_val)} pairs in the validation set"
+        f"Initialized train-val loaders, with: {len(kf_train_flat)} samples "
+        + f"in the training set and {len(kf_val_flat)} samples in the validation set"
     )
     return train_loader, val_loader
+
+
+def _sequence_to_supervised_arrays(data, skip_initial_cycles: int):
+    kf_data = np.array(data.histories["kf"])[skip_initial_cycles:]
+    qp_data = np.array(data.histories["qp"])[skip_initial_cycles:]
+    observation_locations = np.array(data.histories["observation_locations"])[
+        skip_initial_cycles:
+    ]
+    if len(kf_data) == 0:
+        raise ValueError(
+            "No training cycles remain after applying "
+            f"skip_initial_cycles={skip_initial_cycles}."
+        )
+
+    num_ensemble_members = kf_data[0].shape[2]
+    # The authors' CNN input uses obspos[2*nx:], where 0 means rainy/observed
+    # and 1 means dry/unobserved. Internally this project stores True=observed.
+    rain_unobserved_indicator = np.logical_not(observation_locations[:, 2:3])
+    observation_locations_data = np.tile(
+        np.expand_dims(rain_unobserved_indicator, axis=-1),
+        (1, 1, 1, num_ensemble_members),
+    )
+    kf_data_with_observation_locations = np.concat(
+        [kf_data, observation_locations_data], axis=1
+    )
+    return kf_data_with_observation_locations, qp_data
+
+
+def _paper_normalization_stats(kf_train_flat: torch.Tensor, eps: float):
+    state_train = kf_train_flat[:, :3]
+    state_mean = torch.mean(state_train, dim=(0, 2), keepdim=True)
+    state_mean[:, 2] = 0.0
+
+    # Match the authors' np.average(np.var(X[..., :3], axis=0), axis=0).
+    state_var_by_grid = torch.var(state_train, dim=0, unbiased=False)
+    state_std = torch.sqrt(torch.mean(state_var_by_grid, dim=1)).view(1, 3, 1)
+    state_std[state_std < eps] = 1.0
+
+    obs_mean = torch.zeros(
+        (1, 1, 1), dtype=kf_train_flat.dtype, device=kf_train_flat.device
+    )
+    obs_std = torch.ones(
+        (1, 1, 1), dtype=kf_train_flat.dtype, device=kf_train_flat.device
+    )
+    mean_in = torch.cat([state_mean, obs_mean], dim=1)
+    std_in = torch.cat([state_std, obs_std], dim=1)
+
+    return mean_in, std_in, state_mean.clone(), state_std.clone()
 
 
 @app.command()
 def train_nn(
     training_sequence_name: str,
     model_name: str = "cnn_model",
+    validation_sequence_name: str = "",
+    bias_loss_weight: float | None = None,
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     """
@@ -134,7 +187,15 @@ def train_nn(
     Saves the trained model weights under the trained_nn_model_path set in the config.
     """
     model = CNNModel()
-    train(training_sequence_name, model, model_name, include_timestamp_in_name)
+    train(
+        training_sequence_name,
+        model,
+        model_name,
+        include_timestamp_in_name,
+        validation_sequence_name=validation_sequence_name,
+        bias_loss_weight=bias_loss_weight,
+        skip_initial_cycles=skip_initial_cycles,
+    )
 
 
 def train(
@@ -142,6 +203,9 @@ def train(
     model: torch.nn.Module,
     model_name: str,
     include_timestamp_in_name: bool,
+    validation_sequence_name: str = "",
+    bias_loss_weight: float | None = None,
+    skip_initial_cycles: int | None = None,
 ):
     """
     Base Training method
@@ -164,9 +228,11 @@ def train(
         device,
         model_name,
         normalization_path=model_save_path.parent,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
     )
 
-    criterion = RMSEBiasLoss()
+    criterion = RMSEBiasLoss(bias_loss_weight=bias_loss_weight)
     optimizer = torch.optim.Adam(
         params=model.parameters(), lr=training_config.learning_rate
     )
@@ -183,7 +249,7 @@ def train(
 
             pred_states_train = model(kf_train_batch)
             loss = criterion(qp_train_batch, pred_states_train)
-            summed_train_loss += loss
+            summed_train_loss += loss.detach()
             num_processed_train += 1
             loss.backward()
             optimizer.step()
@@ -197,7 +263,7 @@ def train(
             for kf_val_batch, qp_val_batch in val_loader:
                 pred_state_val = model(kf_val_batch)
                 loss = criterion(qp_val_batch, pred_state_val)
-                summed_val_loss += loss
+                summed_val_loss += loss.detach()
                 num_processed_val += 1
 
         avg_loss_train = summed_train_loss / num_processed_train

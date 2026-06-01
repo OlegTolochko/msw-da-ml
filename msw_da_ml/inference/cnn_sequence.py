@@ -132,8 +132,9 @@ def inference(
             ensemble_state, obs_data.observation, obs_data.locations
         )
 
+        rain_unobserved_indicator = np.logical_not(obs_data.locations[2:3])
         observation_locations_data = np.tile(
-            np.expand_dims(obs_data.locations[2:3], axis=-1),
+            np.expand_dims(rain_unobserved_indicator, axis=-1),
             (1, 1, inference_config.num_ensemble_members),
         )
         assimilated_state_with_observation_locations = np.concat(

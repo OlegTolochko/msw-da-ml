@@ -45,8 +45,11 @@ app = cyclopts.App(
 @app.command()
 def generate_training_data(
     num_ensemble_members: int = 10,
-    num_steps: int = 20,
+    num_steps: int = 4820,
     save_name: str = "cnn_training_sequence",
+    seed: int = 42,
+    generate_evolution_animations: bool = False,
+    include_timestamp_in_name: bool = False,
 ):
     """Generates training sequence data for CNN and CQR CNN.
 
@@ -59,16 +62,25 @@ def generate_training_data(
     save_name: str
         Save name for the generated sequence.
     """
+    rngs = RandomGenerators.from_seed(base_seed=seed)
     generator = TrainingSequenceGenerator(
         num_ensemble_members=num_ensemble_members, rngs=rngs
     )
-    generator.run(num_steps=num_steps, sequence_save_name=save_name)
+    generator.run(
+        num_steps=num_steps,
+        sequence_save_name=save_name,
+        generate_evolution_animations=generate_evolution_animations,
+        include_timestamp_in_name=include_timestamp_in_name,
+    )
 
 
 @app.command()
 def train_cnn_model(
     training_sequence_name: str,
     model_name: str = "cnn_model",
+    validation_sequence_name: str = "",
+    bias_loss_weight: float | None = None,
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     """Trains a CNN model for data assimilation.
@@ -83,6 +95,9 @@ def train_cnn_model(
     train_nn(
         training_sequence_name=training_sequence_name,
         model_name=model_name,
+        validation_sequence_name=validation_sequence_name,
+        bias_loss_weight=bias_loss_weight,
+        skip_initial_cycles=skip_initial_cycles,
         include_timestamp_in_name=include_timestamp_in_name,
     )
 

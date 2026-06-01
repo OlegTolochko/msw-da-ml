@@ -49,15 +49,16 @@ network_config:
 
 loss_config:
   variable_to_punish_idx: 1 # Variable for bias loss, Default: 1; Options: 0: velocity, 1: height, 2: rain
-  bias_loss_weight: 1 # Weighting for bias loss
+  bias_loss_weight: 0.0 # Paper standard CNN uses no mass penalty; use 2.0 for the dT10 eta=2 experiment
 
 training_config:
-  val_split_size: 0.2
+  val_split_size: 0.5
   random_state_train_test_split: 42
-  batch_size: 32
+  batch_size: 96
   learning_rate: 0.001
   epochs: 100
   mcdo_dropout: 0.1
+  spinup_cycles: 20
   
 inference_config:
   inference_seed: 43 # difference seed, to ensure different setting
@@ -65,9 +66,10 @@ inference_config:
 
 experiment_config:
   base_seed: 43
-  num_seeds: 10
-  num_inference_steps: 200
+  num_seeds: 500
+  num_inference_steps: 180
   num_ensemble_members: 10
+  spinup_cycles: 20
 
 conformal_prediction_config:
   calibration_split_ratio: 0.5 # percentage of samples/random seeds to be utilized in calibration

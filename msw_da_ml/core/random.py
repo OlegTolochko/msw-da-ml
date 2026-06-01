@@ -8,18 +8,20 @@ class RandomGenerators:
 
     truth_rng: np.random.Generator
     ensemble_rng: np.random.Generator
-    obs_rng: np.random.Generator
+    obs_truth_rng: np.random.Generator
+    obs_ensemble_rng: np.random.Generator
     radar_rng: np.random.Generator
 
     @classmethod
     def from_seed(cls, base_seed: int):
         """Creates independent RNGs from a base seed"""
         ss = np.random.SeedSequence(base_seed)
-        child_seeds = ss.spawn(4)
+        child_seeds = ss.spawn(5)
 
         return cls(
             truth_rng=np.random.default_rng(child_seeds[0]),
             ensemble_rng=np.random.default_rng(child_seeds[1]),
-            obs_rng=np.random.default_rng(child_seeds[2]),
-            radar_rng=np.random.default_rng(child_seeds[3]),
+            obs_truth_rng=np.random.default_rng(child_seeds[2]),
+            obs_ensemble_rng=np.random.default_rng(child_seeds[3]),
+            radar_rng=np.random.default_rng(child_seeds[4]),
         )

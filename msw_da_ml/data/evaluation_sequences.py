@@ -65,12 +65,26 @@ class EvaluationSequenceGenerator:
         )
         enkf_model.initialize()
 
-        qpens_model = copy.deepcopy(enkf_model)
-        cnn_model = copy.deepcopy(enkf_model)
-
         enkf = EnsembleKalmanFilter()
         qpens = QPEnsemble()
         obs_generator = ObservationGenerator(rngs)
+        qpens_model = copy.deepcopy(enkf_model)
+
+        for _ in range(experiment_config.spinup_cycles):
+            truth_model.propagate()
+            truth_state = truth_model.get_state()
+            obs_data = obs_generator.generate_observations_with_locations(
+                truth_state, experiment_config.num_ensemble_members
+            )
+            qpens_model.propagate()
+            qpens_state = qpens_model.get_state()
+            qpens_assimilated = qpens.assimilate(
+                qpens_state, obs_data.observation, obs_data.locations
+            )
+            qpens_model.assimilate(qpens_assimilated)
+
+        enkf_model = copy.deepcopy(qpens_model)
+        cnn_model = copy.deepcopy(qpens_model)
 
         sequence = EvaluationSequence(
             truth=[],
@@ -136,8 +150,9 @@ class EvaluationSequenceGenerator:
     def _apply_cnn_correction(
         self, assimilated_state: np.ndarray, observation_locations: np.ndarray
     ) -> np.ndarray:
+        rain_unobserved_indicator = np.logical_not(observation_locations[2:3])
         observation_locations_data = np.tile(
-            np.expand_dims(observation_locations[2:3], axis=-1),
+            np.expand_dims(rain_unobserved_indicator, axis=-1),
             (1, 1, assimilated_state.shape[2]),
         )
 

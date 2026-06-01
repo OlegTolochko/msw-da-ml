@@ -55,7 +55,7 @@ class NetworkConfig(BaseModel):
 
 class LossConfig(BaseModel):
     variable_to_punish_idx: int
-    bias_loss_weight: int
+    bias_loss_weight: float
 
 
 class TrainingConfig(BaseModel):
@@ -65,6 +65,7 @@ class TrainingConfig(BaseModel):
     learning_rate: float
     epochs: int
     mcdo_dropout: float
+    spinup_cycles: int = 20
 
 
 class InferenceConfig(BaseModel):
@@ -77,6 +78,7 @@ class ExperimentConfig(BaseModel):
     num_seeds: int
     num_inference_steps: int
     num_ensemble_members: int
+    spinup_cycles: int = 20
 
 
 class ConformalPredictionConfig(BaseModel):
