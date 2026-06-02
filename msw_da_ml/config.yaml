@@ -58,6 +58,7 @@ training_config:
   learning_rate: 0.001
   epochs: 100
   mcdo_dropout: 0.1
+  deep_ensemble_size: 10
   spinup_cycles: 20
   
 inference_config:

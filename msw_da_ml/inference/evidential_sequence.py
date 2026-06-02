@@ -9,7 +9,12 @@ import numpy as np
 from cyclopts import App
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
-from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
+from msw_da_ml.inference.base_sequence import (
+    as_float32,
+    closed_loop_context_from_base,
+    iter_observations_from_base,
+    rain_unobserved_channel,
+)
 from msw_da_ml.inference.cnn_sequence import load_trained_model
 from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
@@ -141,9 +146,8 @@ class NigEvaluationSequenceGenerator:
         assimilated_state: np.ndarray,
         observation_locations: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        observation_locations_data = np.tile(
-            np.expand_dims(observation_locations[2:3], axis=-1),
-            (1, 1, assimilated_state.shape[2]),
+        observation_locations_data = rain_unobserved_channel(
+            observation_locations, assimilated_state.shape[2]
         )
 
         state_with_obs = np.concatenate(
@@ -168,7 +172,8 @@ class NigEvaluationSequenceGenerator:
         gamma_np = gamma_denorm.permute(1, 2, 0).cpu().numpy()
         nu_np = nu.permute(1, 2, 0).cpu().numpy()
         alpha_np = alpha.permute(1, 2, 0).cpu().numpy()
-        beta_np = beta.permute(1, 2, 0).cpu().numpy()
+        beta_denorm = beta * (self.norm_stats["std_out"] ** 2)
+        beta_np = beta_denorm.permute(1, 2, 0).cpu().numpy()
 
         return gamma_np, nu_np, alpha_np, beta_np
 
@@ -273,13 +278,20 @@ def generate_nig_evaluation_sequences_from_base(
             seed=base_sequence.seed,
         )
 
-        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
-            base_sequence
+        context = closed_loop_context_from_base(base_sequence)
+        for obs_data in iter_observations_from_base(
+            base_sequence, context.observation_generator
         ):
+            context.model.propagate()
+            cnn_state = context.model.get_state()
+            cnn_enkf_analysis = context.enkf.assimilate(
+                cnn_state, obs_data.observation, obs_data.locations
+            )
             gamma, nu, alpha, beta = generator._apply_cnn_correction_nig(
                 cnn_enkf_analysis,
-                observation_locations,
+                obs_data.locations,
             )
+            context.model.assimilate(gamma)
             sequence.cnn_analysis_gamma.append(gamma.copy())
             sequence.cnn_analysis_nu.append(nu.copy())
             sequence.cnn_analysis_alpha.append(alpha.copy())

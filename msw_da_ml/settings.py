@@ -65,6 +65,7 @@ class TrainingConfig(BaseModel):
     learning_rate: float
     epochs: int
     mcdo_dropout: float
+    deep_ensemble_size: int = 10
     spinup_cycles: int = 20
 
 
@@ -159,6 +160,8 @@ def infer_model_family(name: str) -> str:
         return "mcdo"
     if stem.startswith("evidential"):
         return "evidential"
+    if stem.startswith(("ensemble", "deep_ensemble")):
+        return "ensemble"
     if stem.startswith("rf"):
         return "rf"
     return "cnn"

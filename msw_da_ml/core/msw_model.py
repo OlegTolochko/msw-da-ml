@@ -60,6 +60,8 @@ class EnsembleModel:
 
         past = self.physics_engine.add_ghost_cells(self.state)
         present = self.physics_engine.add_ghost_cells(self.state)
+        past[2] = np.where(past[2] < 0.0, 0.0, past[2])
+        present[2] = np.where(present[2] < 0.0, 0.0, present[2])
         for wind_perturbation in wind_perturbations:
             past, present, future = self.physics_engine.step(
                 past, present, wind_perturbation, has_ghost_cells=True

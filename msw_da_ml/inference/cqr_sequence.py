@@ -8,7 +8,12 @@ import torch
 import numpy as np
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
-from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
+from msw_da_ml.inference.base_sequence import (
+    as_float32,
+    closed_loop_context_from_base,
+    iter_observations_from_base,
+    rain_unobserved_channel,
+)
 from msw_da_ml.inference.cqr_model_io import (
     load_cqr_trained_model,
 )
@@ -127,9 +132,8 @@ class CqrEvaluationSequenceGenerator:
     def _apply_cnn_correction(
         self, assimilated_state: np.ndarray, observation_locations: np.ndarray
     ) -> np.ndarray:
-        observation_locations_data = np.tile(
-            np.expand_dims(observation_locations[2:3], axis=-1),
-            (1, 1, assimilated_state.shape[2]),
+        observation_locations_data = rain_unobserved_channel(
+            observation_locations, assimilated_state.shape[2]
         )
 
         state_with_obs = np.concatenate(
@@ -267,12 +271,19 @@ def generate_cqr_evaluation_sequences_from_base(
             seed=base_sequence.seed,
         )
 
-        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
-            base_sequence
+        context = closed_loop_context_from_base(base_sequence)
+        for obs_data in iter_observations_from_base(
+            base_sequence, context.observation_generator
         ):
-            lower_quantile, upper_quantile = generator._apply_cnn_correction(
-                cnn_enkf_analysis, observation_locations
+            context.model.propagate()
+            cnn_state = context.model.get_state()
+            cnn_enkf_analysis = context.enkf.assimilate(
+                cnn_state, obs_data.observation, obs_data.locations
             )
+            lower_quantile, upper_quantile = generator._apply_cnn_correction(
+                cnn_enkf_analysis, obs_data.locations
+            )
+            context.model.assimilate(0.5 * (lower_quantile + upper_quantile))
             sequence.cnn_analysis_lower_quantiles.append(lower_quantile.copy())
             sequence.cnn_analysis_upper_quantiles.append(upper_quantile.copy())
 

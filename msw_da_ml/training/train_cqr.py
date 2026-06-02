@@ -20,6 +20,8 @@ def train_quantile_nn(
     training_sequence_name: str,
     model_name: str = "quantile_model",
     quantile_tau: float = 0.9,
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     device = (
@@ -41,6 +43,8 @@ def train_quantile_nn(
         device,
         model_name,
         normalization_path=model_save_path.parent,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
     )
 
     lower_quantile = 0.5 * (1 - quantile_tau)
@@ -66,7 +70,7 @@ def train_quantile_nn(
             ) + pinball_loss(
                 qp_train_batch, pred_quantile_upper_train, tau=upper_quantile
             )
-            summed_train_loss += loss
+            summed_train_loss += loss.detach()
             num_processed_train += 1
             loss.backward()
             optimizer.step()
@@ -84,7 +88,7 @@ def train_quantile_nn(
                 ) + pinball_loss(
                     qp_val_batch, pred_quantile_upper_val, tau=upper_quantile
                 )
-                summed_val_loss += loss
+                summed_val_loss += loss.detach()
                 num_processed_val += 1
 
         avg_loss_train = summed_train_loss / num_processed_train

@@ -30,12 +30,113 @@ from msw_da_ml.uncertainty.cqr import (
 from msw_da_ml.inference.evidential_sequence import (
     load_nig_evaluation_sequences,
 )
+from msw_da_ml.inference.ensemble_sequence import (
+    load_ensemble_evaluation_sequences,
+)
 from msw_da_ml.settings import load_settings, get_output_dir
 
 settings = load_settings()
 config = settings.conformal_prediction_config
 global_config = settings.global_config
 viz_dir = get_output_dir(global_config.visualizations_out_filename)
+variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+
+
+def _format_float(value: float) -> str:
+    if not np.isfinite(value):
+        return "--"
+    if value == 0:
+        return "0"
+    if abs(value) >= 1e4 or abs(value) < 1e-3:
+        return f"{value:.3e}"
+    return f"{value:.3f}"
+
+
+def _finite_mean(values: np.ndarray) -> float:
+    finite_values = values[np.isfinite(values)]
+    if finite_values.size == 0:
+        return float("nan")
+    return float(np.mean(finite_values))
+
+
+def _finite_width_time_stats(
+    widths: np.ndarray, var_idx: int
+) -> tuple[np.ndarray, np.ndarray]:
+    var_widths = np.array(widths[:, :, var_idx, ...], dtype=float, copy=True)
+    var_widths[~np.isfinite(var_widths)] = np.nan
+
+    if var_widths.ndim == 4:
+        per_seed_time = np.nanmean(var_widths, axis=(-2, -1))
+    else:
+        per_seed_time = np.nanmean(var_widths, axis=-1)
+
+    return np.nanmean(per_seed_time, axis=0), np.nanstd(per_seed_time, axis=0)
+
+
+def write_average_set_size_table(
+    intervals: list[tuple[np.ndarray, np.ndarray]],
+    method_names: list[str],
+    save_name: str,
+):
+    rows = []
+    for method_name, (lower, upper) in zip(method_names, intervals):
+        widths = upper - lower
+        nan_count = int(np.isnan(widths).sum())
+        inf_count = int(np.isinf(widths).sum())
+        rows.append(
+            (
+                method_name,
+                [_finite_mean(widths[:, :, var_idx, ...]) for var_idx in range(3)],
+                nan_count,
+                inf_count,
+            )
+        )
+
+    table_lines = [
+        "\\begin{table}[H]",
+        "\\centering",
+        "\\scriptsize",
+        "\\begin{tabular}{lrrrrr}",
+        "\\toprule",
+        "Method & $u$ & $h$ & $r$ & NaN & Inf \\\\",
+        "\\midrule",
+    ]
+    for method_name, means, nan_count, inf_count in rows:
+        table_lines.append(
+            f"{method_name} & "
+            f"{_format_float(means[0])} & "
+            f"{_format_float(means[1])} & "
+            f"{_format_float(means[2])} & "
+            f"{nan_count} & {inf_count} \\\\"
+        )
+    table_lines.extend(
+        [
+            "\\bottomrule",
+            "\\end{tabular}",
+            "\\caption{Average set size (interval width) by method and variable. "
+            "NaN and Inf columns report excluded non-finite interval-width values.}",
+            "\\end{table}",
+        ]
+    )
+
+    table_path = f"{viz_dir}/{save_name}_average_set_size_table.tex"
+    with open(table_path, "w", encoding="utf-8") as table_file:
+        table_file.write("\n".join(table_lines) + "\n")
+
+    nonfinite_rows = [
+        (method_name, nan_count, inf_count)
+        for method_name, _, nan_count, inf_count in rows
+        if nan_count or inf_count
+    ]
+    if nonfinite_rows:
+        print("Non-finite average set size values excluded:")
+        for method_name, nan_count, inf_count in nonfinite_rows:
+            print(f"  {method_name}: NaN={nan_count}, Inf={inf_count}")
+    else:
+        print("No NaN/Inf interval-width values were excluded.")
+    print(f"Average set size table saved to: {table_path}")
+
+    return rows
 
 
 def generate_comparison_analysis(
@@ -43,6 +144,7 @@ def generate_comparison_analysis(
     cqr_sequence_name: str,
     mcdo_sequence_name: str = "",
     nig_sequence_name: str = "",
+    ensemble_sequence_name: str = "",
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
     include_rf: bool = False,
@@ -81,6 +183,18 @@ def generate_comparison_analysis(
         nig_cnn_beta = np.asarray(
             [sequence.cnn_analysis_beta for sequence in nig_sequences]
         )
+
+    if ensemble_sequence_name:
+        ensemble_histories = load_ensemble_evaluation_sequences(ensemble_sequence_name)
+        ensemble_qpens = np.asarray([h.qpens_analysis for h in ensemble_histories])
+        ensemble_cnn_mean = np.asarray(
+            [h.cnn_analysis_mean for h in ensemble_histories]
+        )
+        ensemble_cnn_logvar = np.asarray(
+            [h.cnn_analysis_logvar for h in ensemble_histories]
+        )
+        ensemble_cnn_mean_raw = ensemble_cnn_mean
+        ensemble_cnn_logvar_raw = ensemble_cnn_logvar
 
     # Split size
     random_state = config.calibration_split_seed
@@ -229,9 +343,8 @@ def generate_comparison_analysis(
         epistemic_var = aleatoric_var / nu_safe
         total_var = aleatoric_var + epistemic_var
 
-        max_std_clip = 10.0
-        total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
-        nig_total_std = np.sqrt(total_var_clipped)
+        with np.errstate(invalid="ignore"):
+            nig_total_std = np.sqrt(total_var)
 
         alpha = 1 - config.calibration_quantile
         z_score = norm.ppf(1 - alpha / 2)
@@ -241,6 +354,32 @@ def generate_comparison_analysis(
 
         nig_coverage = check_coverage(
             nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
+        )
+
+    # Run deep ensemble STD
+    if ensemble_sequence_name:
+        if ens_mean:
+            ensemble_member_mean = np.mean(ensemble_cnn_mean, axis=-2)
+            ensemble_member_vars = np.mean(np.exp(ensemble_cnn_logvar), axis=-2)
+        else:
+            ensemble_member_mean = ensemble_cnn_mean
+            ensemble_member_vars = np.exp(ensemble_cnn_logvar)
+
+        ensemble_epistemic_var = np.var(ensemble_member_mean, axis=-1)
+        ensemble_aleatoric_var = np.mean(ensemble_member_vars, axis=-1)
+        ensemble_total_std = np.sqrt(
+            ensemble_epistemic_var + ensemble_aleatoric_var
+        )
+        ensemble_mean_pred = np.mean(ensemble_member_mean, axis=-1)
+
+        alpha = 1 - config.calibration_quantile
+        z_score = norm.ppf(1 - alpha / 2)
+
+        ensemble_upper = ensemble_mean_pred + z_score * ensemble_total_std
+        ensemble_lower = ensemble_mean_pred - z_score * ensemble_total_std
+
+        ensemble_coverage = check_coverage(
+            ensemble_qpens, ensemble_upper, ensemble_lower, ens_mean=ens_mean
         )
 
     # Run RF Normalized CP
@@ -292,6 +431,11 @@ def generate_comparison_analysis(
         coverages.append(nig_coverage)
         intervals.append((nig_lower, nig_upper))
 
+    if ensemble_sequence_name:
+        methods.append("Deep Ensemble STD")
+        coverages.append(ensemble_coverage)
+        intervals.append((ensemble_lower, ensemble_upper))
+
     if include_rf:
         methods.append("RF Normalized CP")
         coverages.append(rf_coverage)
@@ -305,6 +449,7 @@ def generate_comparison_analysis(
     plot_interval_width_log_comparison(
         intervals, methods, save_name, ens_mean=ens_mean
     )
+    write_average_set_size_table(intervals, methods, save_name)
 
     plot_coverage_and_width_joint(
         coverages,
@@ -322,16 +467,20 @@ def generate_comparison_analysis(
         mcdo_cnn_mean_raw if mcdo_sequence_name else None,
         nig_qpens_hist if nig_sequence_name else None,
         nig_cnn_gamma if nig_sequence_name else None,
+        ensemble_qpens if ensemble_sequence_name else None,
+        ensemble_cnn_mean_raw if ensemble_sequence_name else None,
         save_name,
     )
 
-    if mcdo_sequence_name or nig_sequence_name:
+    if mcdo_sequence_name or nig_sequence_name or ensemble_sequence_name:
         plot_uncertainty_decomposition(
             mcdo_cnn_mean_raw if mcdo_sequence_name else None,
             mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
             nig_cnn_nu if nig_sequence_name else None,
             nig_cnn_alpha if nig_sequence_name else None,
             nig_cnn_beta if nig_sequence_name else None,
+            ensemble_cnn_mean_raw if ensemble_sequence_name else None,
+            ensemble_cnn_logvar_raw if ensemble_sequence_name else None,
             save_name,
             log_scale=False,
         )
@@ -341,6 +490,8 @@ def generate_comparison_analysis(
             nig_cnn_nu if nig_sequence_name else None,
             nig_cnn_alpha if nig_sequence_name else None,
             nig_cnn_beta if nig_sequence_name else None,
+            ensemble_cnn_mean_raw if ensemble_sequence_name else None,
+            ensemble_cnn_logvar_raw if ensemble_sequence_name else None,
             save_name,
             log_scale=True,
         )
@@ -352,8 +503,6 @@ def plot_coverage_comparison(coverages, method_names, save_name, ens_mean: bool 
     Handles both ens_mean=True (4D coverage) and ens_mean=False (5D coverage).
     """
     fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
     for i, var_name in enumerate(variable_names):
         for j, (coverage, method_name) in enumerate(zip(coverages, method_names)):
             ax = axes[i, j] if len(method_names) > 1 else axes[i]
@@ -412,26 +561,12 @@ def plot_interval_width_comparison(
     Handles both ens_mean=True (4D intervals) and ens_mean=False (5D intervals).
     """
     fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
     for i, var_name in enumerate(variable_names):
         for j, ((lower, upper), method_name) in enumerate(zip(intervals, method_names)):
             ax = axes[i, j] if len(method_names) > 1 else axes[i]
 
             interval_widths = upper - lower
-
-            if interval_widths.ndim == 5:
-                # Shape: (seeds, time, 3, grid, ens), average over grid and ens
-                widths_mean = np.mean(interval_widths[:, :, i, :, :], axis=(0, -2, -1))
-                widths_std = np.std(
-                    np.mean(interval_widths[:, :, i, :, :], axis=(-2, -1)), axis=0
-                )
-            else:
-                # Shape: (seeds, time, 3, grid), average over grid only
-                widths_mean = np.mean(interval_widths[:, :, i, :], axis=(0, -1))
-                widths_std = np.std(
-                    np.mean(interval_widths[:, :, i, :], axis=-1), axis=0
-                )
+            widths_mean, widths_std = _finite_width_time_stats(interval_widths, i)
 
             timesteps = range(len(widths_mean))
             ax.plot(timesteps, widths_mean, "b-", linewidth=2, label="Interval Width")
@@ -480,23 +615,11 @@ def plot_interval_width_log_comparison(
     intervals, method_names, save_name, ens_mean: bool = True
 ):
     fig, axes = plt.subplots(3, len(method_names), figsize=(5 * len(method_names), 12))
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
     for i, var_name in enumerate(variable_names):
         for j, ((lower, upper), method_name) in enumerate(zip(intervals, method_names)):
             ax = axes[i, j] if len(method_names) > 1 else axes[i]
             interval_widths = upper - lower
-
-            if interval_widths.ndim == 5:
-                widths_mean = np.mean(interval_widths[:, :, i, :, :], axis=(0, -2, -1))
-                widths_std = np.std(
-                    np.mean(interval_widths[:, :, i, :, :], axis=(-2, -1)), axis=0
-                )
-            else:
-                widths_mean = np.mean(interval_widths[:, :, i, :], axis=(0, -1))
-                widths_std = np.std(
-                    np.mean(interval_widths[:, :, i, :], axis=-1), axis=0
-                )
+            widths_mean, widths_std = _finite_width_time_stats(interval_widths, i)
 
             finite_positive = widths_mean[np.isfinite(widths_mean) & (widths_mean > 0)]
             min_positive = (
@@ -549,8 +672,6 @@ def plot_coverage_and_width_joint(
         sharex=True,
         sharey=True,
     )
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
-
     for i, var_name in enumerate(variable_names):
         for j, (coverage, (lower, upper), method_name) in enumerate(
             zip(coverages, intervals, method_names)
@@ -572,14 +693,7 @@ def plot_coverage_and_width_joint(
 
             # width stats
             widths = upper - lower
-            if widths.ndim == 5:
-                # (seeds, time, 3, grid, ens)
-                w_mean = np.mean(widths[:, :, i, :, :], axis=(0, -2, -1))
-                w_std = np.std(np.mean(widths[:, :, i, :, :], axis=(-2, -1)), axis=0)
-            else:
-                # (seeds, time, 3, grid)
-                w_mean = np.mean(widths[:, :, i, :], axis=(0, -1))
-                w_std = np.std(np.mean(widths[:, :, i, :], axis=-1), axis=0)
+            w_mean, w_std = _finite_width_time_stats(widths, i)
 
             timesteps = np.arange(len(cov_mean))
 
@@ -668,6 +782,8 @@ def plot_uq_model_rmse_comparison(
     mcdo_cnn_mean,
     nig_qpens,
     nig_cnn_gamma,
+    ensemble_qpens,
+    ensemble_cnn_mean,
     save_name,
 ):
     models = []
@@ -684,7 +800,13 @@ def plot_uq_model_rmse_comparison(
         nig_mean = np.mean(nig_cnn_gamma, axis=-1)
         models.append(("Evidential mean", _rmse_over_time(nig_mean, nig_qpens)))
 
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
+    if ensemble_qpens is not None and ensemble_cnn_mean is not None:
+        ensemble_member_mean = np.mean(ensemble_cnn_mean, axis=-2)
+        ensemble_mean = np.mean(ensemble_member_mean, axis=-1)
+        models.append(
+            ("Deep ensemble mean", _rmse_over_time(ensemble_mean, ensemble_qpens))
+        )
+
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True)
 
     for var_idx, (ax, var_name) in enumerate(zip(axes, variable_names)):
@@ -705,7 +827,9 @@ def plot_uq_model_rmse_comparison(
 
 
 def _mean_uncertainty_by_time(values: np.ndarray) -> np.ndarray:
-    return np.mean(values, axis=(0, -1))
+    finite_values = np.array(values, dtype=float, copy=True)
+    finite_values[~np.isfinite(finite_values)] = np.nan
+    return np.nanmean(finite_values, axis=(0, -1))
 
 
 def plot_uncertainty_decomposition(
@@ -714,6 +838,8 @@ def plot_uncertainty_decomposition(
     nig_cnn_nu,
     nig_cnn_alpha,
     nig_cnn_beta,
+    ensemble_cnn_mean,
+    ensemble_cnn_logvar,
     save_name,
     log_scale: bool = False,
 ):
@@ -753,10 +879,22 @@ def plot_uncertainty_decomposition(
             )
         )
 
+    if ensemble_cnn_mean is not None and ensemble_cnn_logvar is not None:
+        ensemble_mean_ens = np.mean(ensemble_cnn_mean, axis=-2)
+        ensemble_vars_ens = np.mean(np.exp(ensemble_cnn_logvar), axis=-2)
+        ensemble_epistemic = np.var(ensemble_mean_ens, axis=-1)
+        ensemble_aleatoric = np.mean(ensemble_vars_ens, axis=-1)
+        rows.append(
+            (
+                "Deep Ensemble",
+                _mean_uncertainty_by_time(ensemble_aleatoric),
+                _mean_uncertainty_by_time(ensemble_epistemic),
+            )
+        )
+
     if not rows:
         return
 
-    variable_names = ["Velocity (u)", "Height (h)", "Rain (r)"]
     fig, axes = plt.subplots(
         len(rows), 3, figsize=(15, 4.5 * len(rows)), squeeze=False, sharex=True
     )

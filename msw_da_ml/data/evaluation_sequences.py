@@ -136,7 +136,6 @@ class EvaluationSequenceGenerator:
             cnn_enkf_assimilated = enkf.assimilate(
                 cnn_state, obs_data.observation, obs_data.locations
             )
-            sequence.cnn_enkf_analysis.append(cnn_enkf_assimilated.copy())
 
             cnn_corrected = self._apply_cnn_correction(
                 cnn_enkf_assimilated, obs_data.locations
@@ -230,7 +229,6 @@ def save_evaluation_sequences(
         save_data[f"enkf_background_{i}"] = _as_float32(sequence.enkf_background)
         save_data[f"qpens_background_{i}"] = _as_float32(sequence.qpens_background)
         save_data[f"cnn_background_{i}"] = _as_float32(sequence.cnn_background)
-        save_data[f"cnn_enkf_analysis_{i}"] = _as_float32(sequence.cnn_enkf_analysis)
         save_data[f"observation_locations_{i}"] = np.asarray(
             sequence.observation_locations, dtype=bool
         )

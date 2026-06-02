@@ -12,6 +12,7 @@ from msw_da_ml.training.train_cnn import train_nn
 from msw_da_ml.training.train_mcdo import train_mcdo_nn
 from msw_da_ml.training.train_evidential import train_evidential_nn
 from msw_da_ml.training.train_cqr import train_quantile_nn
+from msw_da_ml.training.train_ensemble import train_deep_ensemble_nn
 from msw_da_ml.inference.cnn_sequence import inference
 from msw_da_ml.data.evaluation_sequences import (
     generate_evaluation_data as generate_cp_evaluation_data,
@@ -27,6 +28,9 @@ from msw_da_ml.inference.evidential_sequence import (
 from msw_da_ml.inference.cqr_sequence import (
     generate_cqr_evaluation_data,
     generate_cqr_evaluation_data_from_base,
+)
+from msw_da_ml.inference.ensemble_sequence import (
+    generate_ensemble_evaluation_data_from_base,
 )
 from msw_da_ml.uncertainty.uq_comparison import generate_comparison_analysis
 from msw_da_ml.uncertainty.split_cp import conformal_prediction
@@ -105,7 +109,10 @@ def train_cnn_model(
 @app.command()
 def train_quantile_regression_model(
     training_sequence_name: str,
+    model_name: str = "quantile_model",
     quantile_tau: float = 0.9,
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     """Trains a quantile regression CNN model for uncertainty quantification.
@@ -121,7 +128,10 @@ def train_quantile_regression_model(
     """
     train_quantile_nn(
         training_sequence_name=training_sequence_name,
+        model_name=model_name,
         quantile_tau=quantile_tau,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
         include_timestamp_in_name=include_timestamp_in_name,
     )
 
@@ -130,12 +140,16 @@ def train_quantile_regression_model(
 def train_mcdo_model(
     training_sequence_name: str,
     model_name: str = "mcdo_cnn_model",
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     """Trains an MCDO CNN model on a generated training sequence."""
     train_mcdo_nn(
         training_sequence_name=training_sequence_name,
         model_name=model_name,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
         include_timestamp_in_name=include_timestamp_in_name,
     )
 
@@ -145,6 +159,8 @@ def train_evidential_model(
     training_sequence_name: str,
     model_name: str = "evidential_cnn_model",
     reg_coef: float = 1.0,
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
     include_timestamp_in_name: bool = True,
 ):
     """Trains an evidential NIG CNN model on a generated training sequence."""
@@ -152,6 +168,28 @@ def train_evidential_model(
         training_sequence_name=training_sequence_name,
         model_name=model_name,
         reg_coef=reg_coef,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
+        include_timestamp_in_name=include_timestamp_in_name,
+    )
+
+
+@app.command()
+def train_deep_ensemble_model(
+    training_sequence_name: str,
+    model_name: str = "ensemble_cnn_model",
+    ensemble_size: int | None = None,
+    validation_sequence_name: str = "",
+    skip_initial_cycles: int | None = None,
+    include_timestamp_in_name: bool = True,
+):
+    """Trains a deep ensemble of heteroscedastic CNN members."""
+    train_deep_ensemble_nn(
+        training_sequence_name=training_sequence_name,
+        model_name=model_name,
+        ensemble_size=ensemble_size,
+        validation_sequence_name=validation_sequence_name,
+        skip_initial_cycles=skip_initial_cycles,
         include_timestamp_in_name=include_timestamp_in_name,
     )
 
@@ -233,6 +271,12 @@ def generate_evidential_data_from_base(
 
 
 @app.command()
+def generate_ensemble_data_from_base(base_sequence_name: str, load_model_name: str = ""):
+    """Generates deep ensemble predictions from a saved CNN base evaluation sequence."""
+    generate_ensemble_evaluation_data_from_base(base_sequence_name, load_model_name)
+
+
+@app.command()
 def run_conformal_prediction(evaluation_sequence_name: str, normalize: bool = False):
     """Runs conformal prediction analysis on evaluation sequence data.
 
@@ -264,6 +308,7 @@ def compare_uq_methods(
     cqr_sequence_name: str,
     mcdo_sequence_name: str | None = None,
     evidential_sequence_name: str | None = None,
+    ensemble_sequence_name: str | None = None,
     normalize_cp: bool = True,
     include_cnn_std: bool = False,
     include_rf: bool = False,
@@ -286,6 +331,7 @@ def compare_uq_methods(
         cqr_sequence_name=cqr_sequence_name,
         mcdo_sequence_name=mcdo_sequence_name or "",
         nig_sequence_name=evidential_sequence_name or "",
+        ensemble_sequence_name=ensemble_sequence_name or "",
         normalize_cp=normalize_cp,
         include_cnn_std=include_cnn_std,
         include_rf=include_rf,
@@ -296,7 +342,7 @@ def compare_uq_methods(
 @app.command()
 def list_available_models():
     """Lists all available trained models."""
-    for method in ("cnn", "cqr", "mcdo", "evidential"):
+    for method in ("cnn", "cqr", "mcdo", "evidential", "ensemble"):
         print(f"=== Available {method.upper()} Models ===")
         model_dir = get_model_artifact_dir(method)
         models = [
@@ -333,7 +379,7 @@ def list_available_data():
     else:
         print("Training sequence directory does not exist")
 
-    for method in ("cnn", "cqr", "mcdo", "evidential"):
+    for method in ("cnn", "cqr", "mcdo", "evidential", "ensemble"):
         print(f"\n=== Available {method.upper()} Evaluation Sequences ===")
         exp_data_dir = get_evaluation_sequence_dir(method)
         exp_files = [

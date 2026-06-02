@@ -55,7 +55,7 @@ class MCDOCNNModel(nn.Module):
         mean_raw, logvar = x[:, :3], x[:, 3:]
 
         mean = torch.cat(
-            [mean_raw[:, :1], F.softplus(mean_raw[:, 1:2]), mean_raw[:, 2:]],
+            [mean_raw[:, :2], F.relu(mean_raw[:, 2:])],
             dim=1,
         )
         return mean, logvar

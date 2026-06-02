@@ -9,7 +9,12 @@ import numpy as np
 from cyclopts import App
 
 from msw_da_ml.data.evaluation_sequences import load_evaluation_sequences
-from msw_da_ml.inference.base_sequence import as_float32, iter_cnn_inputs_from_base
+from msw_da_ml.inference.base_sequence import (
+    as_float32,
+    closed_loop_context_from_base,
+    iter_observations_from_base,
+    rain_unobserved_channel,
+)
 from msw_da_ml.inference.cnn_sequence import load_trained_model
 from msw_da_ml.core.msw_model import EnsembleModel
 from msw_da_ml.core.assimilation import EnsembleKalmanFilter, QPEnsemble
@@ -157,9 +162,8 @@ class McdoEvaluationSequenceGenerator:
         corrections = []
         correction_logvars = []
         for i in range(num_iterations):
-            observation_locations_data = np.tile(
-                np.expand_dims(observation_locations[2:3], axis=-1),
-                (1, 1, assimilated_state.shape[2]),
+            observation_locations_data = rain_unobserved_channel(
+                observation_locations, assimilated_state.shape[2]
             )
 
             state_with_obs = np.concatenate(
@@ -294,19 +298,29 @@ def generate_mcdo_evaluation_sequences_from_base(
             cnn_analysis_logvar=[],
             enkf_background=list(base_sequence.enkf_background),
             qpens_background=list(base_sequence.qpens_background),
-            cnn_background=list(base_sequence.cnn_background),
+            cnn_background=[],
             seed=base_sequence.seed,
         )
 
-        for cnn_enkf_analysis, observation_locations in iter_cnn_inputs_from_base(
-            base_sequence
+        context = closed_loop_context_from_base(base_sequence)
+        for obs_data in iter_observations_from_base(
+            base_sequence, context.observation_generator
         ):
+            context.model.propagate()
+            cnn_state = context.model.get_state()
+            sequence.cnn_background.append(cnn_state.copy())
+
+            cnn_enkf_analysis = context.enkf.assimilate(
+                cnn_state, obs_data.observation, obs_data.locations
+            )
             samples, logvars = generator._apply_cnn_correction_mcdo(
                 cnn_enkf_analysis,
-                observation_locations,
+                obs_data.locations,
                 experiment_config.num_ensemble_members,
             )
-            sequence.cnn_analysis_mean.append(np.stack(samples, axis=-1).copy())
+            stacked_samples = np.stack(samples, axis=-1)
+            context.model.assimilate(np.mean(stacked_samples, axis=-1))
+            sequence.cnn_analysis_mean.append(stacked_samples.copy())
             sequence.cnn_analysis_logvar.append(np.stack(logvars, axis=-1).copy())
 
         sequences.append(sequence)

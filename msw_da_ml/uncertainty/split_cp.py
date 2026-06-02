@@ -439,7 +439,7 @@ def mcdo_std(mcdo_sequence_name: str, ens_mean: bool = False):
 
 
 @app.command()
-def nig_std(nig_sequence_name: str, ens_mean: bool = False, max_std_clip: float = 10.0):
+def nig_std(nig_sequence_name: str, ens_mean: bool = False):
     """
     Compute prediction intervals using NIG model uncertainty estimates.
     """
@@ -483,27 +483,30 @@ def nig_std(nig_sequence_name: str, ens_mean: bool = False, max_std_clip: float 
     epistemic_var = aleatoric_var / nu_safe
     total_var = aleatoric_var + epistemic_var
 
-    total_var_clipped = np.clip(total_var, 0, max_std_clip**2)
-    total_std = np.sqrt(total_var_clipped)
+    with np.errstate(invalid="ignore"):
+        total_std = np.sqrt(total_var)
 
-    print("\nVariance Statistics (before clipping):")
+    print("\nVariance Statistics:")
     print(
         f"aleatoric_var: mean={np.mean(aleatoric_var):.4f}, max={np.max(aleatoric_var):.4f}"
     )
     print(
         f"epistemic_var: mean={np.mean(epistemic_var):.4f}, max={np.max(epistemic_var):.4f}"
     )
-    print(
-        f"total_std: mean={np.mean(np.sqrt(total_var)):.4f}, max={np.max(np.sqrt(total_var)):.4f}"
-    )
 
-    num_clipped = np.sum(total_var > max_std_clip**2)
-    total_elements = total_var.size
-    if num_clipped > 0:
+    finite_total_std = total_std[np.isfinite(total_std)]
+    if finite_total_std.size:
         print(
-            f"\n{num_clipped}/{total_elements} ({100 * num_clipped / total_elements:.2f}%) "
-            f"variance values were clipped to max_std={max_std_clip}"
+            f"total_std: mean={np.mean(finite_total_std):.4f}, "
+            f"max={np.max(finite_total_std):.4f}"
         )
+    else:
+        print("total_std: no finite values")
+
+    std_nan_count = int(np.isnan(total_std).sum())
+    std_inf_count = int(np.isinf(total_std).sum())
+    if std_nan_count or std_inf_count:
+        print(f"Non-finite total_std values: NaN={std_nan_count}, Inf={std_inf_count}")
 
     alpha = 1 - config.calibration_quantile
     z_score = norm.ppf(1 - alpha / 2)
@@ -515,9 +518,26 @@ def nig_std(nig_sequence_name: str, ens_mean: bool = False, max_std_clip: float 
     lower_intervals = cnn_gamma - z_score * total_std
 
     interval_lengths = upper_intervals - lower_intervals
+    finite_interval_lengths = interval_lengths[np.isfinite(interval_lengths)]
+    interval_nan_count = int(np.isnan(interval_lengths).sum())
+    interval_inf_count = int(np.isinf(interval_lengths).sum())
     print("\nInterval Length Statistics:")
-    print(f"mean={np.mean(interval_lengths):.4f}, std={np.std(interval_lengths):.4f}")
-    print(f"min={np.min(interval_lengths):.4f}, max={np.max(interval_lengths):.4f}")
+    if finite_interval_lengths.size:
+        print(
+            f"mean={np.mean(finite_interval_lengths):.4f}, "
+            f"std={np.std(finite_interval_lengths):.4f}"
+        )
+        print(
+            f"min={np.min(finite_interval_lengths):.4f}, "
+            f"max={np.max(finite_interval_lengths):.4f}"
+        )
+    else:
+        print("no finite interval lengths")
+    if interval_nan_count or interval_inf_count:
+        print(
+            f"Excluded non-finite interval lengths: "
+            f"NaN={interval_nan_count}, Inf={interval_inf_count}"
+        )
 
     coverage = check_coverage(
         qpens_hist, upper_intervals, lower_intervals, ens_mean=ens_mean
