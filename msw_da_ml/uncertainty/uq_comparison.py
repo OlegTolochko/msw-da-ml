@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 from sklearn.model_selection import train_test_split
 import os
 import joblib
@@ -446,18 +447,7 @@ def generate_comparison_analysis(
 
     plot_coverage_comparison(coverages, methods, save_name, ens_mean=ens_mean)
     plot_interval_width_comparison(intervals, methods, save_name, ens_mean=ens_mean)
-    plot_interval_width_log_comparison(
-        intervals, methods, save_name, ens_mean=ens_mean
-    )
     write_average_set_size_table(intervals, methods, save_name)
-
-    plot_coverage_and_width_joint(
-        coverages,
-        intervals,
-        methods,
-        save_name,
-        ens_mean=ens_mean,
-    )
 
     plot_uq_model_rmse_comparison(
         cqr_qpens,
@@ -484,7 +474,7 @@ def generate_comparison_analysis(
             save_name,
             log_scale=False,
         )
-        plot_uncertainty_decomposition(
+        plot_uncertainty_component(
             mcdo_cnn_mean_raw if mcdo_sequence_name else None,
             mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
             nig_cnn_nu if nig_sequence_name else None,
@@ -493,7 +483,34 @@ def generate_comparison_analysis(
             ensemble_cnn_mean_raw if ensemble_sequence_name else None,
             ensemble_cnn_logvar_raw if ensemble_sequence_name else None,
             save_name,
-            log_scale=True,
+            component="aleatoric",
+            log_scale=False,
+        )
+        plot_uncertainty_component(
+            mcdo_cnn_mean_raw if mcdo_sequence_name else None,
+            mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
+            nig_cnn_nu if nig_sequence_name else None,
+            nig_cnn_alpha if nig_sequence_name else None,
+            nig_cnn_beta if nig_sequence_name else None,
+            ensemble_cnn_mean_raw if ensemble_sequence_name else None,
+            ensemble_cnn_logvar_raw if ensemble_sequence_name else None,
+            save_name,
+            component="epistemic",
+            log_scale=False,
+        )
+        plot_error_vs_time_colored_by_eu(
+            mcdo_qpens if mcdo_sequence_name else None,
+            mcdo_cnn_mean_raw if mcdo_sequence_name else None,
+            mcdo_cnn_logvar_raw if mcdo_sequence_name else None,
+            nig_qpens_hist if nig_sequence_name else None,
+            nig_cnn_gamma if nig_sequence_name else None,
+            nig_cnn_nu if nig_sequence_name else None,
+            nig_cnn_alpha if nig_sequence_name else None,
+            nig_cnn_beta if nig_sequence_name else None,
+            ensemble_qpens if ensemble_sequence_name else None,
+            ensemble_cnn_mean_raw if ensemble_sequence_name else None,
+            ensemble_cnn_logvar_raw if ensemble_sequence_name else None,
+            save_name,
         )
 
 
@@ -832,7 +849,7 @@ def _mean_uncertainty_by_time(values: np.ndarray) -> np.ndarray:
     return np.nanmean(finite_values, axis=(0, -1))
 
 
-def plot_uncertainty_decomposition(
+def _uncertainty_rows(
     mcdo_cnn_mean,
     mcdo_cnn_logvar,
     nig_cnn_nu,
@@ -840,9 +857,7 @@ def plot_uncertainty_decomposition(
     nig_cnn_beta,
     ensemble_cnn_mean,
     ensemble_cnn_logvar,
-    save_name,
-    log_scale: bool = False,
-):
+) -> list[tuple[str, np.ndarray, np.ndarray]]:
     rows = []
 
     if mcdo_cnn_mean is not None and mcdo_cnn_logvar is not None:
@@ -892,6 +907,61 @@ def plot_uncertainty_decomposition(
             )
         )
 
+    return rows
+
+
+def _apply_uncertainty_axis_scale(ax, values: np.ndarray, log_scale: bool):
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if not finite.size:
+        return
+
+    if log_scale:
+        positive = finite[finite > 0]
+        if positive.size:
+            ax.set_yscale("log")
+            ax.set_ylim(np.min(positive) * 0.5, np.max(positive) * 1.25)
+            ax.grid(True, alpha=0.3, which="both")
+        return
+
+    robust_top = np.percentile(finite, 98) * 1.15
+    raw_top = np.max(finite) * 1.05
+    if robust_top > 0 and raw_top > 2.5 * robust_top:
+        ax.set_ylim(0, robust_top)
+        ax.text(
+            0.02,
+            0.92,
+            f"axis clipped\nmax={raw_top / 1.05:.2g}",
+            transform=ax.transAxes,
+            fontsize=8,
+            va="top",
+            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
+        )
+    elif raw_top > 0:
+        ax.set_ylim(0, raw_top)
+
+
+def plot_uncertainty_decomposition(
+    mcdo_cnn_mean,
+    mcdo_cnn_logvar,
+    nig_cnn_nu,
+    nig_cnn_alpha,
+    nig_cnn_beta,
+    ensemble_cnn_mean,
+    ensemble_cnn_logvar,
+    save_name,
+    log_scale: bool = False,
+):
+    rows = _uncertainty_rows(
+        mcdo_cnn_mean,
+        mcdo_cnn_logvar,
+        nig_cnn_nu,
+        nig_cnn_alpha,
+        nig_cnn_beta,
+        ensemble_cnn_mean,
+        ensemble_cnn_logvar,
+    )
+
     if not rows:
         return
 
@@ -912,29 +982,7 @@ def plot_uncertainty_decomposition(
             ax.legend()
 
             upper = np.concatenate([aleatoric[:, var_idx], epistemic[:, var_idx]])
-            upper = upper[np.isfinite(upper)]
-            if log_scale:
-                positive = upper[upper > 0]
-                if positive.size:
-                    ax.set_yscale("log")
-                    ax.set_ylim(np.min(positive) * 0.5, np.max(positive) * 1.25)
-                    ax.grid(True, alpha=0.3, which="both")
-            elif upper.size:
-                robust_top = np.percentile(upper, 98) * 1.15
-                raw_top = np.max(upper) * 1.05
-                if robust_top > 0 and raw_top > 2.5 * robust_top:
-                    ax.set_ylim(0, robust_top)
-                    ax.text(
-                        0.02,
-                        0.92,
-                        f"axis clipped\nmax={raw_top / 1.05:.2g}",
-                        transform=ax.transAxes,
-                        fontsize=8,
-                        va="top",
-                        bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"},
-                    )
-                else:
-                    ax.set_ylim(0, raw_top)
+            _apply_uncertainty_axis_scale(ax, upper, log_scale)
 
     plt.tight_layout()
     suffix = (
@@ -945,4 +993,200 @@ def plot_uncertainty_decomposition(
     save_path = f"{viz_dir}/{save_name}_{suffix}.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"UQ uncertainty decomposition saved to: {save_path}")
+    plt.close(fig)
+
+
+def plot_uncertainty_component(
+    mcdo_cnn_mean,
+    mcdo_cnn_logvar,
+    nig_cnn_nu,
+    nig_cnn_alpha,
+    nig_cnn_beta,
+    ensemble_cnn_mean,
+    ensemble_cnn_logvar,
+    save_name,
+    component: str,
+    log_scale: bool = False,
+):
+    rows = _uncertainty_rows(
+        mcdo_cnn_mean,
+        mcdo_cnn_logvar,
+        nig_cnn_nu,
+        nig_cnn_alpha,
+        nig_cnn_beta,
+        ensemble_cnn_mean,
+        ensemble_cnn_logvar,
+    )
+    if not rows:
+        return
+    if component not in {"aleatoric", "epistemic"}:
+        raise ValueError("component must be 'aleatoric' or 'epistemic'")
+
+    component_idx = 1 if component == "epistemic" else 0
+    label = "EU" if component == "epistemic" else "AU"
+    title = "Epistemic uncertainty" if component == "epistemic" else "Aleatoric uncertainty"
+
+    fig, axes = plt.subplots(
+        len(rows), 3, figsize=(15, 4.5 * len(rows)), squeeze=False, sharex=True
+    )
+
+    for row_idx, row in enumerate(rows):
+        method_name = row[0]
+        values = row[component_idx + 1]
+        for var_idx, var_name in enumerate(variable_names):
+            ax = axes[row_idx, var_idx]
+            timesteps = np.arange(values.shape[0])
+            ax.plot(timesteps, values[:, var_idx], linewidth=2, label=label)
+            ax.set_title(f"{method_name} - {var_name}")
+            ax.set_xlabel("Timestep")
+            ax.set_ylabel("Variance" if not log_scale else "Variance (log)")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            _apply_uncertainty_axis_scale(ax, values[:, var_idx], log_scale)
+
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    suffix = f"{component}_uncertainty"
+    if log_scale:
+        suffix += "_log"
+    save_path = f"{viz_dir}/{save_name}_{suffix}.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"{title} plot saved to: {save_path}")
+    plt.close(fig)
+
+
+def _per_seed_time_rmse(prediction: np.ndarray, target: np.ndarray) -> np.ndarray:
+    target_mean = _ensemble_mean(target)
+    error = prediction - target_mean
+    return np.sqrt(np.mean(error**2, axis=-1))
+
+
+def _eu_grid_values_from_mcdo(mean_values: np.ndarray) -> np.ndarray:
+    member_mean = np.mean(mean_values, axis=-2)
+    return np.var(member_mean, axis=-1)
+
+
+def _eu_grid_values_from_evidential(
+    nu_values: np.ndarray,
+    alpha_values: np.ndarray,
+    beta_values: np.ndarray,
+) -> np.ndarray:
+    nu = np.mean(nu_values, axis=-1)
+    alpha = np.mean(alpha_values, axis=-1)
+    beta = np.mean(beta_values, axis=-1)
+    alpha_safe = np.maximum(alpha, 1.0 + 1e-6)
+    nu_safe = np.maximum(nu, 1e-6)
+    aleatoric = beta / (alpha_safe - 1.0)
+    return aleatoric / nu_safe
+
+
+def _mean_prediction_from_samples(mean_values: np.ndarray) -> np.ndarray:
+    return np.mean(np.mean(mean_values, axis=-2), axis=-1)
+
+
+def plot_error_vs_time_colored_by_eu(
+    mcdo_qpens,
+    mcdo_cnn_mean,
+    mcdo_cnn_logvar,
+    nig_qpens,
+    nig_cnn_gamma,
+    nig_cnn_nu,
+    nig_cnn_alpha,
+    nig_cnn_beta,
+    ensemble_qpens,
+    ensemble_cnn_mean,
+    ensemble_cnn_logvar,
+    save_name,
+):
+    rows = []
+    if mcdo_qpens is not None and mcdo_cnn_mean is not None:
+        rows.append(
+            (
+                "MCDO",
+                _per_seed_time_rmse(
+                    _mean_prediction_from_samples(mcdo_cnn_mean), mcdo_qpens
+                ),
+                np.nanmean(_eu_grid_values_from_mcdo(mcdo_cnn_mean), axis=-1),
+            )
+        )
+    if (
+        nig_qpens is not None
+        and nig_cnn_gamma is not None
+        and nig_cnn_nu is not None
+        and nig_cnn_alpha is not None
+        and nig_cnn_beta is not None
+    ):
+        rows.append(
+            (
+                "Evidential",
+                _per_seed_time_rmse(np.mean(nig_cnn_gamma, axis=-1), nig_qpens),
+                np.nanmean(
+                    _eu_grid_values_from_evidential(
+                        nig_cnn_nu, nig_cnn_alpha, nig_cnn_beta
+                    ),
+                    axis=-1,
+                ),
+            )
+        )
+    if ensemble_qpens is not None and ensemble_cnn_mean is not None:
+        rows.append(
+            (
+                "Deep Ensemble",
+                _per_seed_time_rmse(
+                    _mean_prediction_from_samples(ensemble_cnn_mean), ensemble_qpens
+                ),
+                np.nanmean(_eu_grid_values_from_mcdo(ensemble_cnn_mean), axis=-1),
+            )
+        )
+
+    if not rows:
+        return
+
+    fig, axes = plt.subplots(
+        len(rows), 3, figsize=(15, 4.5 * len(rows)), squeeze=False, sharex=True
+    )
+    scatter = None
+
+    for row_idx, (method_name, error_rmse, epistemic) in enumerate(rows):
+        for var_idx, var_name in enumerate(variable_names):
+            ax = axes[row_idx, var_idx]
+            time = np.tile(np.arange(error_rmse.shape[1]), error_rmse.shape[0])
+            y = error_rmse[:, :, var_idx].reshape(-1)
+            color = epistemic[:, :, var_idx].reshape(-1)
+            mask = np.isfinite(time) & np.isfinite(y) & np.isfinite(color)
+            time = time[mask]
+            y = y[mask]
+            color = color[mask]
+
+            positive = color[color > 0]
+            if positive.size:
+                color_values = np.maximum(color, np.min(positive))
+                norm = LogNorm(vmin=np.min(positive), vmax=np.max(positive))
+            else:
+                color_values = color
+                norm = None
+
+            scatter = ax.scatter(
+                time,
+                y,
+                c=color_values,
+                norm=norm,
+                cmap="viridis",
+                s=12,
+                alpha=0.75,
+                edgecolors="none",
+            )
+            ax.set_title(f"{method_name} - {var_name}")
+            ax.set_xlabel("Timestep")
+            ax.set_ylabel("RMSE vs QPEns")
+            ax.grid(True, alpha=0.3)
+
+    fig.suptitle("Model error over time colored by epistemic uncertainty", fontsize=14)
+    fig.tight_layout(rect=(0, 0, 0.90, 0.97))
+    if scatter is not None:
+        colorbar_axis = fig.add_axes([0.92, 0.12, 0.02, 0.76])
+        fig.colorbar(scatter, cax=colorbar_axis, label="EU")
+    save_path = f"{viz_dir}/{save_name}_error_vs_time_colored_by_eu.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"Error vs time colored by EU plot saved to: {save_path}")
     plt.close(fig)

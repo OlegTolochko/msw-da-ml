@@ -96,7 +96,7 @@ pip install -e .  # Install in development mode
 ```
 
 ### Running the Pipeline
-(or use the pretrained set of models + sequence histories directly provided in a zenodo DOI: https://zenodo.org/records/20393004)
+(or use the pretrained set of models + sequence histories directly provided in a zenodo DOI: https://zenodo.org/records/20507413)
 
 1. **Generate a training sequence:**
    ```bash
