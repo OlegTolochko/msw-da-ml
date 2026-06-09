@@ -32,7 +32,10 @@ from msw_da_ml.inference.cqr_sequence import (
 from msw_da_ml.inference.ensemble_sequence import (
     generate_ensemble_evaluation_data_from_base,
 )
-from msw_da_ml.uncertainty.uq_comparison import generate_comparison_analysis
+from msw_da_ml.uncertainty.uq_comparison import (
+    generate_comparison_analysis,
+    generate_single_model_gaussian_analysis,
+)
 from msw_da_ml.uncertainty.split_cp import conformal_prediction
 from msw_da_ml.uncertainty.cqr import cqr_prediction
 
@@ -336,6 +339,23 @@ def compare_uq_methods(
         include_cnn_std=include_cnn_std,
         include_rf=include_rf,
         ens_mean=ens_mean,
+    )
+
+
+@app.command()
+def single_model_gaussian(
+    ensemble_sequence_name: str,
+    model_index: int = 0,
+    output_name: str = "",
+):
+    """Plots Gaussian intervals for one stored model member.
+
+    The selected model's physical ensemble dimension is used for intervals.
+    """
+    generate_single_model_gaussian_analysis(
+        ensemble_sequence_name=ensemble_sequence_name,
+        model_index=model_index,
+        output_name=output_name,
     )
 
 

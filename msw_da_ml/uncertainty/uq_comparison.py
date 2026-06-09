@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 import os
 import joblib
 from datetime import datetime
+from pathlib import Path
 from scipy.stats import norm
 
 from msw_da_ml.data.evaluation_sequences import (
@@ -138,6 +139,91 @@ def write_average_set_size_table(
     print(f"Average set size table saved to: {table_path}")
 
     return rows
+
+
+def _single_model_output_name(
+    sequence_name: str,
+    model_index: int,
+    output_name: str,
+) -> str:
+    if output_name:
+        return output_name.replace(".npz", "")
+    stem = Path(sequence_name).stem
+    return f"{stem}_model{model_index:02d}_single_model_gaussian"
+
+
+def generate_single_model_gaussian_analysis(
+    ensemble_sequence_name: str,
+    model_index: int = 0,
+    output_name: str = "",
+):
+    """Generate Gaussian interval plots from one stored model member.
+
+    The selected model's physical ensemble axis is used as the Gaussian sample
+    axis, while all saved sequence histories/seeds remain in the plot batch.
+    """
+    histories = load_ensemble_evaluation_sequences(ensemble_sequence_name)
+    qpens = np.asarray([history.qpens_analysis for history in histories])
+    ensemble_cnn_mean = np.asarray([history.cnn_analysis_mean for history in histories])
+    ensemble_cnn_logvar = np.asarray(
+        [history.cnn_analysis_logvar for history in histories]
+    )
+
+    if ensemble_cnn_mean.ndim != 6:
+        raise ValueError(
+            "Expected cnn_analysis_mean with shape "
+            "(sequence, time, variable, grid, physical_ensemble, deep_ensemble_member); "
+            f"got {ensemble_cnn_mean.shape}"
+        )
+    if qpens.shape != ensemble_cnn_mean.shape[:-1]:
+        raise ValueError(
+            f"QPEns shape {qpens.shape} does not match prediction shape "
+            f"{ensemble_cnn_mean.shape[:-1]}"
+        )
+
+    num_stored_models = ensemble_cnn_mean.shape[-1]
+    if model_index < 0 or model_index >= num_stored_models:
+        raise IndexError(
+            f"model_index must be between 0 and {num_stored_models - 1}; "
+            f"got {model_index}"
+        )
+
+    alpha = 1.0 - config.calibration_quantile
+    z_score = norm.ppf(1.0 - alpha / 2.0)
+
+    selected_model_mean = ensemble_cnn_mean[..., model_index]
+    selected_model_var = np.exp(ensemble_cnn_logvar[..., model_index])
+
+    epistemic_var = np.var(selected_model_mean, axis=-1)
+    aleatoric_var = np.mean(selected_model_var, axis=-1)
+    total_std = np.sqrt(epistemic_var + aleatoric_var)
+    ensemble_mean_pred = np.mean(selected_model_mean, axis=-1)
+
+    upper = ensemble_mean_pred + z_score * total_std
+    lower = ensemble_mean_pred - z_score * total_std
+    coverage = check_coverage(qpens, upper, lower, ens_mean=True)
+    widths = upper - lower
+
+    save_name = _single_model_output_name(ensemble_sequence_name, model_index, output_name)
+    method_names = ["Single Model Gaussian"]
+
+    plot_coverage_comparison([coverage], method_names, save_name, ens_mean=True)
+    plot_interval_width_comparison(
+        [(lower, upper)], method_names, save_name, ens_mean=True
+    )
+    write_average_set_size_table([(lower, upper)], method_names, save_name)
+
+    print(f"Sequences: {len(histories)}")
+    print(f"Stored model index: {model_index}")
+    print(f"Target coverage: {config.calibration_quantile:.0%}")
+    print(f"Z-score used: {z_score:.4f}")
+    for var_idx, var_name in enumerate(variable_names):
+        print(
+            f"{var_name}: mean coverage={np.mean(coverage[:, :, var_idx, :]):.4f}, "
+            f"average set size={np.nanmean(widths[:, :, var_idx, :]):.4f}"
+        )
+
+    return coverage, lower, upper
 
 
 def generate_comparison_analysis(
