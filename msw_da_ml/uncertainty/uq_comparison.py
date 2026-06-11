@@ -18,11 +18,11 @@ from msw_da_ml.inference.mcdo_sequence import (
     load_mcdo_evaluation_sequences,
 )
 from msw_da_ml.uncertainty.split_cp import (
-    calibrate,
     check_coverage,
     get_rf_norm,
     cp_main,
 )
+from msw_da_ml.uncertainty.conformal_quantile import calculate_empirical_quantile
 from msw_da_ml.uncertainty.rf_normalizer import get_rf_model_path
 from msw_da_ml.uncertainty.cqr import (
     calibrate_quantile_intervals_symmetric,
@@ -141,20 +141,324 @@ def write_average_set_size_table(
     return rows
 
 
+def _build_seed_splits(num_seeds: int, num_splits: int) -> list[tuple[np.ndarray, np.ndarray]]:
+    if num_splits < 1:
+        raise ValueError("num_splits must be at least 1")
+    if num_seeds < 2:
+        raise ValueError("At least two sequence histories are needed for calibration/test splits")
+
+    seed_indices = np.arange(num_seeds)
+    test_size = 1 - config.calibration_split_ratio
+    splits = []
+    for split_idx in range(num_splits):
+        calib_idx, test_idx = train_test_split(
+            seed_indices,
+            test_size=test_size,
+            random_state=config.calibration_split_seed + split_idx,
+        )
+        splits.append((np.asarray(calib_idx), np.asarray(test_idx)))
+    return splits
+
+
+def _validate_seed_count(
+    expected_num_seeds: int,
+    method_name: str,
+    values: np.ndarray,
+):
+    if values.shape[0] != expected_num_seeds:
+        raise ValueError(
+            f"{method_name} has {values.shape[0]} sequence histories, "
+            f"expected {expected_num_seeds}. All methods must share the same "
+            "seed dimension for comparable splits."
+        )
+
+
+def _seed_labels(histories) -> np.ndarray:
+    return np.asarray([history.seed for history in histories])
+
+
+def _validate_seed_labels(
+    expected_seed_labels: np.ndarray,
+    method_name: str,
+    seed_labels: np.ndarray,
+):
+    if not np.array_equal(seed_labels, expected_seed_labels):
+        raise ValueError(
+            f"{method_name} seed labels/order do not match CP seed labels. "
+            f"Expected {expected_seed_labels.tolist()}, got {seed_labels.tolist()}."
+        )
+
+
+def _quantile_expand_shape(quantiles: np.ndarray, target_ndim: int) -> tuple[int, ...]:
+    return (1, quantiles.shape[0], quantiles.shape[1]) + (1,) * (target_ndim - 3)
+
+
+def _calibrate_scaled_intervals(
+    truth_calib: np.ndarray,
+    center_calib: np.ndarray,
+    scale_calib: np.ndarray,
+    truth_test: np.ndarray,
+    center_test: np.ndarray,
+    scale_test: np.ndarray,
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if ens_mean:
+        truth_calib = np.mean(truth_calib, axis=-1)
+
+    if truth_calib.shape != center_calib.shape:
+        raise ValueError(
+            f"Calibration truth shape {truth_calib.shape} does not match "
+            f"center shape {center_calib.shape}"
+        )
+    if center_calib.shape != scale_calib.shape:
+        raise ValueError(
+            f"Calibration center shape {center_calib.shape} does not match "
+            f"scale shape {scale_calib.shape}"
+        )
+    if center_test.shape != scale_test.shape:
+        raise ValueError(
+            f"Test center shape {center_test.shape} does not match "
+            f"scale shape {scale_test.shape}"
+        )
+
+    scores = np.abs(truth_calib - center_calib) / np.maximum(scale_calib, 1e-12)
+    alpha = 1.0 - config.calibration_quantile
+    quantiles = []
+    for var_idx in range(3):
+        quantiles.append(
+            calculate_empirical_quantile(
+                scores[:, :, var_idx, ...],
+                alpha=alpha,
+            )
+        )
+    quantiles = np.stack(quantiles, axis=-1)
+    quantiles_expanded = quantiles.reshape(_quantile_expand_shape(quantiles, center_test.ndim))
+
+    upper = center_test + quantiles_expanded * scale_test
+    lower = center_test - quantiles_expanded * scale_test
+    coverage = check_coverage(truth_test, upper, lower, ens_mean=ens_mean)
+    return coverage, lower, upper
+
+
+def _run_scaled_interval_splits(
+    truth: np.ndarray,
+    center: np.ndarray,
+    scale: np.ndarray,
+    splits: list[tuple[np.ndarray, np.ndarray]],
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    coverages = []
+    lowers = []
+    uppers = []
+    for calib_idx, test_idx in splits:
+        coverage, lower, upper = _calibrate_scaled_intervals(
+            truth[calib_idx],
+            center[calib_idx],
+            scale[calib_idx],
+            truth[test_idx],
+            center[test_idx],
+            scale[test_idx],
+            ens_mean=ens_mean,
+        )
+        coverages.append(coverage)
+        lowers.append(lower)
+        uppers.append(upper)
+    return (
+        np.concatenate(coverages, axis=0),
+        np.concatenate(lowers, axis=0),
+        np.concatenate(uppers, axis=0),
+    )
+
+
+def _run_fixed_z_intervals(
+    truth: np.ndarray,
+    center: np.ndarray,
+    scale: np.ndarray,
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    alpha = 1.0 - config.calibration_quantile
+    z_score = norm.ppf(1.0 - alpha / 2.0)
+    upper = center + z_score * scale
+    lower = center - z_score * scale
+    coverage = check_coverage(truth, upper, lower, ens_mean=ens_mean)
+    return coverage, lower, upper
+
+
+def _run_gaussian_intervals(
+    truth: np.ndarray,
+    center: np.ndarray,
+    scale: np.ndarray,
+    splits: list[tuple[np.ndarray, np.ndarray]],
+    ens_mean: bool,
+    calibrate_gaussian: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if calibrate_gaussian:
+        return _run_scaled_interval_splits(
+            truth, center, scale, splits, ens_mean=ens_mean
+        )
+    return _run_fixed_z_intervals(truth, center, scale, ens_mean=ens_mean)
+
+
+def _gaussian_method_name(base_name: str, calibrate_gaussian: bool) -> str:
+    suffix = "Calibrated" if calibrate_gaussian else "Raw z"
+    return f"{base_name} ({suffix})"
+
+
+def _run_cp_splits(
+    qpens: np.ndarray,
+    cnn: np.ndarray,
+    splits: list[tuple[np.ndarray, np.ndarray]],
+    normalize: bool,
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    coverages = []
+    lowers = []
+    uppers = []
+    for calib_idx, test_idx in splits:
+        _, coverage, upper, lower = cp_main(
+            cnn[calib_idx],
+            qpens[calib_idx],
+            cnn[test_idx],
+            qpens[test_idx],
+            normalize=normalize,
+            ens_mean=ens_mean,
+        )
+        coverages.append(coverage)
+        lowers.append(lower)
+        uppers.append(upper)
+    return (
+        np.concatenate(coverages, axis=0),
+        np.concatenate(lowers, axis=0),
+        np.concatenate(uppers, axis=0),
+    )
+
+
+def _run_cqr_splits(
+    qpens: np.ndarray,
+    lower_quantiles: np.ndarray,
+    upper_quantiles: np.ndarray,
+    splits: list[tuple[np.ndarray, np.ndarray]],
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    coverages = []
+    lowers = []
+    uppers = []
+    for calib_idx, test_idx in splits:
+        adjustments = calibrate_quantile_intervals_symmetric(
+            qpens[calib_idx],
+            lower_quantiles[calib_idx],
+            upper_quantiles[calib_idx],
+            ens_mean=ens_mean,
+        )
+        lower_adj, upper_adj = apply_symmetric_quantile_adjustments(
+            lower_quantiles[test_idx],
+            upper_quantiles[test_idx],
+            adjustments,
+            ens_mean=ens_mean,
+        )
+        coverage = check_quantile_coverage(
+            qpens[test_idx], lower_adj, upper_adj, ens_mean=ens_mean
+        )
+        coverages.append(coverage)
+        lowers.append(lower_adj)
+        uppers.append(upper_adj)
+    return (
+        np.concatenate(coverages, axis=0),
+        np.concatenate(lowers, axis=0),
+        np.concatenate(uppers, axis=0),
+    )
+
+
+def _mcdo_center_scale(
+    cnn_mean: np.ndarray, cnn_logvar: np.ndarray, ens_mean: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    if ens_mean:
+        sample_mean = np.mean(cnn_mean, axis=-2)
+        sample_var = np.mean(np.exp(cnn_logvar), axis=-2)
+    else:
+        sample_mean = cnn_mean
+        sample_var = np.exp(cnn_logvar)
+
+    epistemic_var = np.var(sample_mean, axis=-1)
+    aleatoric_var = np.mean(sample_var, axis=-1)
+    center = np.mean(sample_mean, axis=-1)
+    return center, np.sqrt(epistemic_var + aleatoric_var)
+
+
+def _nig_center_scale(
+    gamma: np.ndarray,
+    nu: np.ndarray,
+    alpha: np.ndarray,
+    beta: np.ndarray,
+    ens_mean: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    if ens_mean:
+        gamma = np.mean(gamma, axis=-1)
+        nu = np.mean(nu, axis=-1)
+        alpha = np.mean(alpha, axis=-1)
+        beta = np.mean(beta, axis=-1)
+
+    alpha_safe = np.maximum(alpha, 1.0 + 1e-6)
+    nu_safe = np.maximum(nu, 1e-6)
+    aleatoric_var = beta / (alpha_safe - 1.0)
+    epistemic_var = aleatoric_var / nu_safe
+    return gamma, np.sqrt(aleatoric_var + epistemic_var)
+
+
+def _deep_ensemble_center_scale(
+    cnn_mean: np.ndarray, cnn_logvar: np.ndarray, ens_mean: bool
+) -> tuple[np.ndarray, np.ndarray]:
+    if ens_mean:
+        sample_mean = np.mean(cnn_mean, axis=-2)
+        sample_var = np.mean(np.exp(cnn_logvar), axis=-2)
+    else:
+        sample_mean = cnn_mean
+        sample_var = np.exp(cnn_logvar)
+
+    epistemic_var = np.var(sample_mean, axis=-1)
+    aleatoric_var = np.mean(sample_var, axis=-1)
+    center = np.mean(sample_mean, axis=-1)
+    return center, np.sqrt(epistemic_var + aleatoric_var)
+
+
+def _single_model_center_scale(
+    cnn_mean: np.ndarray,
+    cnn_logvar: np.ndarray,
+    model_index: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    num_stored_models = cnn_mean.shape[-1]
+    if model_index < 0 or model_index >= num_stored_models:
+        raise IndexError(
+            f"model_index must be between 0 and {num_stored_models - 1}; "
+            f"got {model_index}"
+        )
+
+    selected_mean = cnn_mean[..., model_index]
+    selected_var = np.exp(cnn_logvar[..., model_index])
+    epistemic_var = np.var(selected_mean, axis=-1)
+    aleatoric_var = np.mean(selected_var, axis=-1)
+    center = np.mean(selected_mean, axis=-1)
+    return center, np.sqrt(epistemic_var + aleatoric_var)
+
+
 def _single_model_output_name(
     sequence_name: str,
     model_index: int,
     output_name: str,
+    calibrate_gaussian: bool,
 ) -> str:
     if output_name:
         return output_name.replace(".npz", "")
     stem = Path(sequence_name).stem
-    return f"{stem}_model{model_index:02d}_single_model_gaussian"
+    mode = "calibrated" if calibrate_gaussian else "raw_z"
+    return f"{stem}_model{model_index:02d}_single_model_gaussian_{mode}"
 
 
 def generate_single_model_gaussian_analysis(
     ensemble_sequence_name: str,
     model_index: int = 0,
+    num_splits: int = 10,
+    calibrate_gaussian: bool = True,
     output_name: str = "",
 ):
     """Generate Gaussian interval plots from one stored model member.
@@ -181,31 +485,24 @@ def generate_single_model_gaussian_analysis(
             f"{ensemble_cnn_mean.shape[:-1]}"
         )
 
-    num_stored_models = ensemble_cnn_mean.shape[-1]
-    if model_index < 0 or model_index >= num_stored_models:
-        raise IndexError(
-            f"model_index must be between 0 and {num_stored_models - 1}; "
-            f"got {model_index}"
-        )
-
-    alpha = 1.0 - config.calibration_quantile
-    z_score = norm.ppf(1.0 - alpha / 2.0)
-
-    selected_model_mean = ensemble_cnn_mean[..., model_index]
-    selected_model_var = np.exp(ensemble_cnn_logvar[..., model_index])
-
-    epistemic_var = np.var(selected_model_mean, axis=-1)
-    aleatoric_var = np.mean(selected_model_var, axis=-1)
-    total_std = np.sqrt(epistemic_var + aleatoric_var)
-    ensemble_mean_pred = np.mean(selected_model_mean, axis=-1)
-
-    upper = ensemble_mean_pred + z_score * total_std
-    lower = ensemble_mean_pred - z_score * total_std
-    coverage = check_coverage(qpens, upper, lower, ens_mean=True)
+    center, scale = _single_model_center_scale(
+        ensemble_cnn_mean, ensemble_cnn_logvar, model_index
+    )
+    splits = _build_seed_splits(qpens.shape[0], num_splits)
+    coverage, lower, upper = _run_gaussian_intervals(
+        qpens,
+        center,
+        scale,
+        splits,
+        ens_mean=True,
+        calibrate_gaussian=calibrate_gaussian,
+    )
     widths = upper - lower
 
-    save_name = _single_model_output_name(ensemble_sequence_name, model_index, output_name)
-    method_names = ["Single Model Gaussian"]
+    save_name = _single_model_output_name(
+        ensemble_sequence_name, model_index, output_name, calibrate_gaussian
+    )
+    method_names = [_gaussian_method_name("Single Model Gaussian", calibrate_gaussian)]
 
     plot_coverage_comparison([coverage], method_names, save_name, ens_mean=True)
     plot_interval_width_comparison(
@@ -215,8 +512,13 @@ def generate_single_model_gaussian_analysis(
 
     print(f"Sequences: {len(histories)}")
     print(f"Stored model index: {model_index}")
+    print(f"Gaussian calibration: {calibrate_gaussian}")
+    if calibrate_gaussian:
+        print(f"Seed-only splits: {num_splits}")
+    else:
+        alpha = 1.0 - config.calibration_quantile
+        print(f"Fixed z-score: {norm.ppf(1.0 - alpha / 2.0):.4f}")
     print(f"Target coverage: {config.calibration_quantile:.0%}")
-    print(f"Z-score used: {z_score:.4f}")
     for var_idx, var_name in enumerate(variable_names):
         print(
             f"{var_name}: mean coverage={np.mean(coverage[:, :, var_idx, :]):.4f}, "
@@ -236,25 +538,38 @@ def generate_comparison_analysis(
     include_cnn_std: bool = False,
     include_rf: bool = False,
     ens_mean: bool = True,
+    num_splits: int = 10,
+    single_model_index: int | None = None,
+    calibrate_gaussian: bool = True,
 ):
     """
     Generate comparison plots between CP, normalized CP, CQR, and UQ baselines.
     """
     # CP data
     cp_histories = load_cp_sequences(cp_sequence_name)
-    cp_truth = np.asarray([h.truth for h in cp_histories])
+    cp_seed_labels = _seed_labels(cp_histories)
     cp_qpens = np.asarray([h.qpens_analysis for h in cp_histories])
     cp_cnn = np.asarray([h.cnn_analysis for h in cp_histories])
 
     # CQR data
     cqr_histories = load_cqr_evaluation_sequences(cqr_sequence_name)
-    cqr_truth = np.asarray([h.truth for h in cqr_histories])
+    _validate_seed_labels(cp_seed_labels, "CQR", _seed_labels(cqr_histories))
     cqr_qpens = np.asarray([h.qpens_analysis for h in cqr_histories])
     cqr_lower = np.asarray([h.cnn_analysis_lower_quantiles for h in cqr_histories])
     cqr_upper = np.asarray([h.cnn_analysis_upper_quantiles for h in cqr_histories])
 
+    if mcdo_sequence_name:
+        mcdo_histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
+        _validate_seed_labels(cp_seed_labels, "MCDO", _seed_labels(mcdo_histories))
+        mcdo_qpens = np.asarray([h.qpens_analysis for h in mcdo_histories])
+        mcdo_cnn_mean = np.asarray([h.cnn_analysis_mean for h in mcdo_histories])
+        mcdo_cnn_logvar = np.asarray([h.cnn_analysis_logvar for h in mcdo_histories])
+        mcdo_cnn_mean_raw = mcdo_cnn_mean
+        mcdo_cnn_logvar_raw = mcdo_cnn_logvar
+
     if nig_sequence_name:
         nig_sequences = load_nig_evaluation_sequences(nig_sequence_name)
+        _validate_seed_labels(cp_seed_labels, "Evidential", _seed_labels(nig_sequences))
         nig_qpens_hist = np.asarray(
             [sequence.qpens_analysis for sequence in nig_sequences]
         )
@@ -273,6 +588,9 @@ def generate_comparison_analysis(
 
     if ensemble_sequence_name:
         ensemble_histories = load_ensemble_evaluation_sequences(ensemble_sequence_name)
+        _validate_seed_labels(
+            cp_seed_labels, "Deep ensemble", _seed_labels(ensemble_histories)
+        )
         ensemble_qpens = np.asarray([h.qpens_analysis for h in ensemble_histories])
         ensemble_cnn_mean = np.asarray(
             [h.cnn_analysis_mean for h in ensemble_histories]
@@ -283,216 +601,144 @@ def generate_comparison_analysis(
         ensemble_cnn_mean_raw = ensemble_cnn_mean
         ensemble_cnn_logvar_raw = ensemble_cnn_logvar
 
-    # Split size
-    random_state = config.calibration_split_seed
-    test_size = 1 - config.calibration_split_ratio
+    num_seed_histories = cp_qpens.shape[0]
+    _validate_seed_count(num_seed_histories, "CQR", cqr_qpens)
+    if mcdo_sequence_name:
+        _validate_seed_count(num_seed_histories, "MCDO", mcdo_qpens)
+    if nig_sequence_name:
+        _validate_seed_count(num_seed_histories, "Evidential", nig_qpens_hist)
+    if ensemble_sequence_name:
+        _validate_seed_count(num_seed_histories, "Deep ensemble", ensemble_qpens)
 
-    # CP splits
-    (
-        cp_truth_calib,
-        cp_truth_test,
-        cp_qpens_calib,
-        cp_qpens_test,
-        cp_cnn_calib,
-        cp_cnn_test,
-    ) = train_test_split(
-        cp_truth, cp_qpens, cp_cnn, test_size=test_size, random_state=random_state
+    splits = _build_seed_splits(num_seed_histories, num_splits)
+
+    # Run CP (standard) over the shared seed splits.
+    cp_coverage, cp_lower, cp_upper = _run_cp_splits(
+        cp_qpens, cp_cnn, splits, normalize=False, ens_mean=ens_mean
     )
-
-    # CQR splits
-    (
-        cqr_truth_calib,
-        cqr_truth_test,
-        cqr_qpens_calib,
-        cqr_qpens_test,
-        cqr_lower_calib,
-        cqr_lower_test,
-        cqr_upper_calib,
-        cqr_upper_test,
-    ) = train_test_split(
-        cqr_truth,
-        cqr_qpens,
-        cqr_lower,
-        cqr_upper,
-        test_size=test_size,
-        random_state=random_state,
-    )
-
-    # Run CP (standard)
-    cp_quantiles = calibrate(
-        cp_qpens_calib, cp_cnn_calib, normalization_term=1, ens_mean=ens_mean
-    )
-    cp_cnn_mean = np.mean(cp_cnn_test, axis=-1)
-    if ens_mean:
-        cp_quantiles_exp = np.tile(
-            np.expand_dims(cp_quantiles, (0, -1)),
-            (cp_cnn_mean.shape[0], 1, 1, cp_cnn_mean.shape[-1]),
-        )
-        cp_upper = cp_cnn_mean + cp_quantiles_exp
-        cp_lower = cp_cnn_mean - cp_quantiles_exp
-    else:
-        cp_quantiles_exp = np.tile(
-            np.expand_dims(cp_quantiles, (0, -2, -1)),
-            (cp_cnn_test.shape[0], 1, 1, cp_cnn_test.shape[-2], cp_cnn_test.shape[-1]),
-        )
-        cp_upper = cp_cnn_test + cp_quantiles_exp
-        cp_lower = cp_cnn_test - cp_quantiles_exp
-
-    cp_coverage = check_coverage(cp_qpens_test, cp_upper, cp_lower, ens_mean=ens_mean)
 
     # Run CP (normalized)
     if normalize_cp:
-        cp_std = np.std(cp_cnn_calib, axis=-1)
-        cp_std[:, :, 2] += config.rain_normalization_eps
-        cp_norm_quantiles = calibrate(cp_qpens_calib, cp_cnn_calib, cp_std)
-        cp_test_std = np.std(cp_cnn_test, axis=-1)
-        cp_test_std[:, :, 2] += config.rain_normalization_eps
-        cp_norm_quantiles_exp = (
-            np.tile(
-                np.expand_dims(cp_norm_quantiles, (0, -1)),
-                (cp_cnn_mean.shape[0], 1, 1, cp_cnn_mean.shape[-1]),
-            )
-            * cp_test_std
+        cp_norm_coverage, cp_norm_lower, cp_norm_upper = _run_cp_splits(
+            cp_qpens, cp_cnn, splits, normalize=True, ens_mean=ens_mean
         )
-        cp_norm_upper = cp_cnn_mean + cp_norm_quantiles_exp
-        cp_norm_lower = cp_cnn_mean - cp_norm_quantiles_exp
-        cp_norm_coverage = check_coverage(cp_qpens_test, cp_norm_upper, cp_norm_lower)
 
     if include_cnn_std:
-        cnn_ens_mean = np.mean(cp_cnn, axis=-1)
-        cnn_ens_std = np.std(cp_cnn, axis=-1)
-        cnn_std_upper_intervals = cnn_ens_mean + cnn_ens_std
-        cnn_std_lower_intervals = cnn_ens_mean - cnn_ens_std
-
-        cnn_std_coverage = check_coverage(
-            cp_qpens, cnn_std_upper_intervals, cnn_std_lower_intervals
+        if ens_mean:
+            cnn_center = np.mean(cp_cnn, axis=-1)
+            cnn_scale = np.std(cp_cnn, axis=-1)
+        else:
+            cnn_center = cp_cnn
+            cnn_scale = np.broadcast_to(np.std(cp_cnn, axis=-1)[..., None], cp_cnn.shape)
+        cnn_std_coverage, cnn_std_lower_intervals, cnn_std_upper_intervals = (
+            _run_gaussian_intervals(
+                cp_qpens,
+                cnn_center,
+                cnn_scale,
+                splits,
+                ens_mean=ens_mean,
+                calibrate_gaussian=calibrate_gaussian,
+            )
         )
 
     # Run CQR
-    cqr_adjustments = calibrate_quantile_intervals_symmetric(
-        cqr_qpens_calib, cqr_lower_calib, cqr_upper_calib, ens_mean=ens_mean
-    )
-    cqr_lower_adj, cqr_upper_adj = apply_symmetric_quantile_adjustments(
-        cqr_lower_test, cqr_upper_test, cqr_adjustments, ens_mean=ens_mean
-    )
-    cqr_coverage = check_quantile_coverage(
-        cqr_qpens_test, cqr_lower_adj, cqr_upper_adj, ens_mean=ens_mean
+    cqr_coverage, cqr_lower_adj, cqr_upper_adj = _run_cqr_splits(
+        cqr_qpens, cqr_lower, cqr_upper, splits, ens_mean=ens_mean
     )
 
-    # Run MCDO STD
+    # Run calibrated Gaussian intervals for stochastic/predictive UQ models.
     if mcdo_sequence_name:
-        mcdo_histories = load_mcdo_evaluation_sequences(mcdo_sequence_name)
-        mcdo_qpens = np.asarray([h.qpens_analysis for h in mcdo_histories])
-        mcdo_cnn_mean = np.asarray([h.cnn_analysis_mean for h in mcdo_histories])
-        mcdo_cnn_logvar = np.asarray([h.cnn_analysis_logvar for h in mcdo_histories])
-        mcdo_cnn_mean_raw = mcdo_cnn_mean
-        mcdo_cnn_logvar_raw = mcdo_cnn_logvar
-
-        if ens_mean:
-            mcdo_cnn_mean = np.mean(mcdo_cnn_mean, axis=-2)
-            mcdo_cnn_vars = np.mean(np.exp(mcdo_cnn_logvar), axis=-2)
-        else:
-            mcdo_cnn_vars = np.exp(mcdo_cnn_logvar)
-
-        epistemic_var = np.var(mcdo_cnn_mean, axis=-1)
-        aleatoric_var = np.mean(mcdo_cnn_vars, axis=-1)
-        total_std = np.sqrt(epistemic_var + aleatoric_var)
-
-        mcdo_mean_pred = np.mean(mcdo_cnn_mean, axis=-1)
-
-        alpha = 1 - config.calibration_quantile
-        z_score = norm.ppf(1 - alpha / 2)
-
-        mcdo_upper = mcdo_mean_pred + z_score * total_std
-        mcdo_lower = mcdo_mean_pred - z_score * total_std
-
-        mcdo_coverage = check_coverage(
-            mcdo_qpens, mcdo_upper, mcdo_lower, ens_mean=ens_mean
+        mcdo_center, mcdo_scale = _mcdo_center_scale(
+            mcdo_cnn_mean, mcdo_cnn_logvar, ens_mean=ens_mean
+        )
+        mcdo_coverage, mcdo_lower, mcdo_upper = _run_gaussian_intervals(
+            mcdo_qpens,
+            mcdo_center,
+            mcdo_scale,
+            splits,
+            ens_mean=ens_mean,
+            calibrate_gaussian=calibrate_gaussian,
         )
 
-    # Run evidential STD
     if nig_sequence_name:
-        if ens_mean:
-            nig_cnn_gamma_mean = np.mean(nig_cnn_gamma, axis=-1)
-            nig_cnn_nu_mean = np.mean(nig_cnn_nu, axis=-1)
-            nig_cnn_alpha_mean = np.mean(nig_cnn_alpha, axis=-1)
-            nig_cnn_beta_mean = np.mean(nig_cnn_beta, axis=-1)
-        else:
-            nig_cnn_gamma_mean = nig_cnn_gamma
-            nig_cnn_nu_mean = nig_cnn_nu
-            nig_cnn_alpha_mean = nig_cnn_alpha
-            nig_cnn_beta_mean = nig_cnn_beta
-
-        alpha_safe = np.maximum(nig_cnn_alpha_mean, 1.0 + 1e-6)
-        nu_safe = np.maximum(nig_cnn_nu_mean, 1e-6)
-
-        aleatoric_var = nig_cnn_beta_mean / (alpha_safe - 1.0)
-        epistemic_var = aleatoric_var / nu_safe
-        total_var = aleatoric_var + epistemic_var
-
-        with np.errstate(invalid="ignore"):
-            nig_total_std = np.sqrt(total_var)
-
-        alpha = 1 - config.calibration_quantile
-        z_score = norm.ppf(1 - alpha / 2)
-
-        nig_upper = nig_cnn_gamma_mean + z_score * nig_total_std
-        nig_lower = nig_cnn_gamma_mean - z_score * nig_total_std
-
-        nig_coverage = check_coverage(
-            nig_qpens_hist, nig_upper, nig_lower, ens_mean=ens_mean
+        nig_center, nig_scale = _nig_center_scale(
+            nig_cnn_gamma,
+            nig_cnn_nu,
+            nig_cnn_alpha,
+            nig_cnn_beta,
+            ens_mean=ens_mean,
+        )
+        nig_coverage, nig_lower, nig_upper = _run_gaussian_intervals(
+            nig_qpens_hist,
+            nig_center,
+            nig_scale,
+            splits,
+            ens_mean=ens_mean,
+            calibrate_gaussian=calibrate_gaussian,
         )
 
-    # Run deep ensemble STD
     if ensemble_sequence_name:
-        if ens_mean:
-            ensemble_member_mean = np.mean(ensemble_cnn_mean, axis=-2)
-            ensemble_member_vars = np.mean(np.exp(ensemble_cnn_logvar), axis=-2)
-        else:
-            ensemble_member_mean = ensemble_cnn_mean
-            ensemble_member_vars = np.exp(ensemble_cnn_logvar)
-
-        ensemble_epistemic_var = np.var(ensemble_member_mean, axis=-1)
-        ensemble_aleatoric_var = np.mean(ensemble_member_vars, axis=-1)
-        ensemble_total_std = np.sqrt(
-            ensemble_epistemic_var + ensemble_aleatoric_var
+        ensemble_center, ensemble_scale = _deep_ensemble_center_scale(
+            ensemble_cnn_mean, ensemble_cnn_logvar, ens_mean=ens_mean
         )
-        ensemble_mean_pred = np.mean(ensemble_member_mean, axis=-1)
-
-        alpha = 1 - config.calibration_quantile
-        z_score = norm.ppf(1 - alpha / 2)
-
-        ensemble_upper = ensemble_mean_pred + z_score * ensemble_total_std
-        ensemble_lower = ensemble_mean_pred - z_score * ensemble_total_std
-
-        ensemble_coverage = check_coverage(
-            ensemble_qpens, ensemble_upper, ensemble_lower, ens_mean=ens_mean
+        ensemble_coverage, ensemble_lower, ensemble_upper = (
+            _run_gaussian_intervals(
+                ensemble_qpens,
+                ensemble_center,
+                ensemble_scale,
+                splits,
+                ens_mean=ens_mean,
+                calibrate_gaussian=calibrate_gaussian,
+            )
         )
 
-    # Run RF Normalized CP
+        if single_model_index is not None:
+            single_model_center, single_model_scale = _single_model_center_scale(
+                ensemble_cnn_mean, ensemble_cnn_logvar, single_model_index
+            )
+            single_model_coverage, single_model_lower, single_model_upper = (
+                _run_gaussian_intervals(
+                    ensemble_qpens,
+                    single_model_center,
+                    single_model_scale,
+                    splits,
+                    ens_mean=True,
+                    calibrate_gaussian=calibrate_gaussian,
+                )
+            )
+    elif single_model_index is not None:
+        raise ValueError("single_model_index requires an ensemble_sequence_name")
+
+    # Run RF Normalized CP over the same shared splits.
     if include_rf:
         rf_path = get_rf_model_path()
         if not os.path.exists(rf_path):
             raise FileNotFoundError(f"RF model not found at {rf_path}.")
         rf = joblib.load(rf_path)
 
-        rf_norm_calib = get_rf_norm(cp_cnn_calib, rf)
-        rf_norm_test = get_rf_norm(cp_cnn_test, rf)
-
+        rf_norm = get_rf_norm(cp_cnn, rf)
         if ens_mean:
-            rf_norm_calib = np.mean(rf_norm_calib, axis=-1)
-            rf_norm_test = np.mean(rf_norm_test, axis=-1)
-
-        _, rf_coverage, rf_upper, rf_lower = cp_main(
-            cp_cnn_calib,
-            cp_qpens_calib,
-            cp_cnn_test,
-            cp_qpens_test,
-            normalize=True,
-            external_norm_calib=rf_norm_calib,
-            external_norm_test=rf_norm_test,
-            ens_mean=ens_mean,
-        )
+            rf_norm = np.mean(rf_norm, axis=-1)
+        rf_coverages = []
+        rf_lowers = []
+        rf_uppers = []
+        for calib_idx, test_idx in splits:
+            _, coverage, upper, lower = cp_main(
+                cp_cnn[calib_idx],
+                cp_qpens[calib_idx],
+                cp_cnn[test_idx],
+                cp_qpens[test_idx],
+                normalize=True,
+                external_norm_calib=rf_norm[calib_idx],
+                external_norm_test=rf_norm[test_idx],
+                ens_mean=ens_mean,
+            )
+            rf_coverages.append(coverage)
+            rf_lowers.append(lower)
+            rf_uppers.append(upper)
+        rf_coverage = np.concatenate(rf_coverages, axis=0)
+        rf_lower = np.concatenate(rf_lowers, axis=0)
+        rf_upper = np.concatenate(rf_uppers, axis=0)
 
     # Comparison plots:
     methods = ["CP", "CQR"]
@@ -504,24 +750,33 @@ def generate_comparison_analysis(
         intervals.append((cp_norm_lower, cp_norm_upper))
 
     if include_cnn_std:
-        methods.append("CNN STD")
+        methods.append(_gaussian_method_name("CNN STD", calibrate_gaussian))
         coverages.append(cnn_std_coverage)
         intervals.append((cnn_std_lower_intervals, cnn_std_upper_intervals))
 
     if mcdo_sequence_name:
-        methods.append("MCDO STD")
+        methods.append(_gaussian_method_name("MCDO Gaussian", calibrate_gaussian))
         coverages.append(mcdo_coverage)
         intervals.append((mcdo_lower, mcdo_upper))
 
     if nig_sequence_name:
-        methods.append("Evidential STD")
+        methods.append(_gaussian_method_name("NIG Gaussian", calibrate_gaussian))
         coverages.append(nig_coverage)
         intervals.append((nig_lower, nig_upper))
 
     if ensemble_sequence_name:
-        methods.append("Deep Ensemble STD")
+        methods.append(
+            _gaussian_method_name("Deep Ensemble Gaussian", calibrate_gaussian)
+        )
         coverages.append(ensemble_coverage)
         intervals.append((ensemble_lower, ensemble_upper))
+
+        if single_model_index is not None:
+            methods.append(
+                _gaussian_method_name("Single Model Gaussian", calibrate_gaussian)
+            )
+            coverages.append(single_model_coverage)
+            intervals.append((single_model_lower, single_model_upper))
 
     if include_rf:
         methods.append("RF Normalized CP")
